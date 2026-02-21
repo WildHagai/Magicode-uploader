@@ -15,35 +15,24 @@ Upload files to [send.magicode.me](https://send.magicode.me) directly from the W
 - **Clipboard integration** — The download URL is automatically copied to your clipboard
 - **Toast notifications** — Get notified when the upload starts and completes
 - **No console window** — Runs silently in the background
-- **No admin required** — Installs per-user under HKCU
 
 ## Installation
 
 ### From Release
 
-1. Download `MagicodeUploader-x64.zip` from the [latest release](../../releases/latest)
-2. Extract the zip
-3. Run the installer:
+1. Download `MagicodeUploader-Setup.exe` from the [latest release](../../releases/latest)
+2. Run the installer
 
-```powershell
-powershell -ExecutionPolicy Bypass -File MagicodeUploader\scripts\install.ps1
-```
+The installer will automatically set up the context menu, enable Developer Mode for Win11 support (a UAC prompt will appear), and register all necessary components.
 
 ### Prerequisites
 
 - **Node.js** (v18+) — [nodejs.org](https://nodejs.org)
 - **Windows 10/11** (x64)
-- **Developer Mode** enabled (for Win11 modern context menu)
 
 ### Uninstall
 
 Go to **Settings > Apps > Installed apps**, find "Magicode Uploader", and click Uninstall.
-
-Or run manually:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File uninstall.ps1
-```
 
 ## Usage
 
@@ -63,22 +52,26 @@ node src/main.js <file1> [file2] [file3] ...
 
 ## Building from Source
 
-### Build the native DLL
+### Prerequisites
 
-Requires Visual Studio 2022 and Windows SDK:
+- Visual Studio 2022 (with C++ desktop workload)
+- Windows SDK
+- [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+
+### Build the native DLL
 
 ```bash
 npm run build:dll
 ```
 
-### Create a distributable package
+### Build the installer
 
 ```bash
 npm install
 npm run pack
 ```
 
-This creates `dist/MagicodeUploader-x64.zip`.
+The GitHub Action handles all of this automatically when a version tag is pushed.
 
 ## How It Works
 
@@ -88,7 +81,7 @@ This creates `dist/MagicodeUploader-x64.zip`.
 | `src/launcher.vbs` | Launches node.exe without a console window |
 | `src/win11/MagicodeNative.dll` | Native C++ IExplorerCommand handler for Win11 modern context menu |
 | `AppxManifest.xml` | Sparse MSIX package for Win11 context menu identity |
-| `scripts/install.ps1` | Registers context menu, sparse package, and Apps & Features entry |
+| `scripts/installer.iss` | Inno Setup script that builds the single-file installer |
 
 The Win11 modern context menu requires a native COM DLL implementing `IExplorerCommand` plus a sparse MSIX package for app identity. The classic context menu uses a simple registry-based `shell\verb\command` entry that launches `wscript.exe` with a VBScript wrapper to hide the console window.
 
@@ -97,11 +90,11 @@ The Win11 modern context menu requires a native COM DLL implementing `IExplorerC
 Push a version tag to trigger the GitHub Action:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
-The action builds the native DLL, packages everything, and publishes `MagicodeUploader-x64.zip` to GitHub Releases.
+The action builds the native DLL, creates the installer with Inno Setup, and publishes `MagicodeUploader-Setup.exe` to GitHub Releases.
 
 ---
 
@@ -120,29 +113,20 @@ The action builds the native DLL, packages everything, and publishes `MagicodeUp
 - **העתקה ללוח** — קישור ההורדה מועתק אוטומטית ללוח
 - **התראות** — הודעה כשההעלאה מתחילה ומסתיימת
 - **ללא חלון קונסול** — רץ ברקע בשקט
-- **ללא הרשאות מנהל** — התקנה למשתמש הנוכחי בלבד
 
 ### התקנה
 
 #### מגרסה מוכנה
 
-1. הורידו את `MagicodeUploader-x64.zip` מ[הגרסה האחרונה](../../releases/latest)
-2. חלצו את הקובץ
-3. הריצו את ההתקנה:
+1. הורידו את `MagicodeUploader-Setup.exe` מ[הגרסה האחרונה](../../releases/latest)
+2. הריצו את קובץ ההתקנה
 
-<div dir="ltr">
-
-```powershell
-powershell -ExecutionPolicy Bypass -File MagicodeUploader\scripts\install.ps1
-```
-
-</div>
+ההתקנה תגדיר אוטומטית את תפריט הלחיצה הימנית, תפעיל מצב מפתח לתמיכה ב-Windows 11 (תופיע בקשת UAC), ותרשום את כל הרכיבים הנדרשים.
 
 #### דרישות מקדימות
 
 - **Node.js** (גרסה 18 ומעלה) — [nodejs.org](https://nodejs.org)
 - **Windows 10/11** (x64)
-- **מצב מפתח** מופעל (לתפריט המודרני של Windows 11)
 
 ### הסרה
 

@@ -19,14 +19,13 @@ $devMode = (Get-ItemProperty $regPath -ErrorAction SilentlyContinue).AllowDevelo
 if ($devMode -ne 1) {
     # Enable Developer Mode via elevated process
     $enableScript = @"
-Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -Name 'AllowDevelopmentWithoutDevLicense' -Value 1 -Type DWord -Force
 if (-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock')) {
     New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -Force | Out-Null
 }
 Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -Name 'AllowDevelopmentWithoutDevLicense' -Value 1 -Type DWord -Force
 "@
     $encodedCmd = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($enableScript))
-    $proc = Start-Process powershell.exe -ArgumentList "-NoProfile -EncodedCommand $encodedCmd" -Verb RunAs -Wait -PassThru -ErrorAction Stop
+    $proc = Start-Process powershell.exe -ArgumentList "-NoProfile -WindowStyle Hidden -EncodedCommand $encodedCmd" -Verb RunAs -Wait -PassThru -ErrorAction Stop
     if ($proc.ExitCode -ne 0) {
         Write-Error "Failed to enable Developer Mode"
         exit 1

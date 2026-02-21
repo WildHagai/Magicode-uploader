@@ -47,6 +47,9 @@ Source: "..\AppxManifest.xml"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\MagicodeUploader.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion
 
+; Win11 registration script
+Source: "register-win11.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
+
 [Registry]
 ; Classic context menu - files
 Root: HKCU; Subkey: "Software\Classes\*\shell\MagicodeUpload"; ValueType: string; ValueName: ""; ValueData: "Upload to Magicode"; Flags: uninsdeletekey
@@ -62,8 +65,8 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\MagicodeUpload\command"; V
 [Run]
 ; Write magicode-config.json with correct paths after install
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""$nodePath = (Get-Command node -ErrorAction SilentlyContinue).Source; if (-not $nodePath) {{ $nodePath = 'node.exe' }}; $escaped = $nodePath -replace '\\','\\\\'; $mainJs = '{app}\src\main.js' -replace '\\','\\\\'; Set-Content '{app}\src\win11\build\magicode-config.json' ('{{\""nodePath\"": \""' + $escaped + '\"", \""mainJsPath\"": \""' + $mainJs + '\""}}'  ) -Encoding UTF8"""; Flags: runhidden shellexec waituntilterminated
-; Register sparse MSIX package for Win11 modern context menu
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""try {{ Get-AppxPackage MagicodeUploader -ErrorAction SilentlyContinue | Remove-AppxPackage -ErrorAction SilentlyContinue }} catch {{}}; $devMode = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense; if ($devMode -eq 1) {{ Add-AppxPackage -Register '{app}\AppxManifest.xml' -ExternalLocation '{app}' }}"""; Flags: runhidden shellexec waituntilterminated
+; Register sparse MSIX package for Win11 modern context menu (enables Developer Mode if needed)
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\register-win11.ps1"" -AppDir ""{app}"""; Flags: runhidden shellexec waituntilterminated
 
 [UninstallRun]
 ; Remove sparse MSIX package

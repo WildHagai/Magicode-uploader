@@ -32,7 +32,6 @@ jobs:
           $sdkVer = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
             Sort-Object Name | Select-Object -Last 1 -ExpandProperty Name
           echo "SDK_VER=$sdkVer" >> $env:GITHUB_OUTPUT
-          echo "Using Windows SDK: $sdkVer"
 
       - name: Build native DLL
         shell: cmd
@@ -48,15 +47,12 @@ jobs:
       - name: Build stub executable
         shell: pwsh
         run: |
-          $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          $stubSrc = @"
-          class Program { static void Main() {} }
-          "@
+          $stubSrc = "class Program { static void Main() {} }"
           Set-Content "stub.cs" $stubSrc
-          & $csc /nologo /target:exe /out:MagicodeUploader.exe stub.cs
+          & "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /out:MagicodeUploader.exe stub.cs
           Remove-Item stub.cs
 
-      - name: Create asset logos
+      - name: Create assets
         shell: pwsh
         run: |
           if (-not (Test-Path "Assets")) { New-Item Assets -ItemType Directory }
@@ -77,12 +73,27 @@ jobs:
             $bmp.Dispose()
           }
           Copy-Item "Assets\Square44x44Logo.png" "Assets\logo.png"
+          & powershell -File scripts\create-icon.ps1
 
-      - name: Pack release
-        run: node scripts/pack.js
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update version in installer script
+        shell: pwsh
+        run: |
+          $iss = Get-Content scripts\installer.iss -Raw
+          $iss = $iss -replace '#define MyAppVersion "1.0.0"', "#define MyAppVersion `"${{ steps.version.outputs.VERSION }}`""
+          Set-Content scripts\installer.iss $iss
+
+      - name: Build installer with Inno Setup
+        shell: cmd
+        run: |
+          "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /O"dist" scripts\installer.iss
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/MagicodeUploader-x64.zip
+          files: dist/MagicodeUploader-Setup.exe
           generate_release_notes: true

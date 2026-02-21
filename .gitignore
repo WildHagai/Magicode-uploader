@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.a5c/
+src/win11/build/
+src/win11/bin/
+src/win11/obj/
+upload-debug.log
+*.log
+nul

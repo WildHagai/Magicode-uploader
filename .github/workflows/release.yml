@@ -1,0 +1,88 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Find Windows SDK
+        id: sdk
+        shell: pwsh
+        run: |
+          $sdkVer = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
+            Sort-Object Name | Select-Object -Last 1 -ExpandProperty Name
+          echo "SDK_VER=$sdkVer" >> $env:GITHUB_OUTPUT
+          echo "Using Windows SDK: $sdkVer"
+
+      - name: Build native DLL
+        shell: cmd
+        run: |
+          set "SDK_INC=%ProgramFiles(x86)%\Windows Kits\10\Include\${{ steps.sdk.outputs.SDK_VER }}"
+          set "SDK_LIB=%ProgramFiles(x86)%\Windows Kits\10\Lib\${{ steps.sdk.outputs.SDK_VER }}"
+          if not exist "src\win11\build" mkdir "src\win11\build"
+          cl.exe /nologo /O2 /W3 /EHsc /std:c++17 /I"%SDK_INC%\um" /I"%SDK_INC%\shared" /I"%SDK_INC%\ucrt" /LD src\win11\MagicodeContextMenu.cpp /Fo"src\win11\build\MagicodeNative.obj" /Fe"src\win11\build\MagicodeNative.dll" /link /DEF:src\win11\MagicodeContextMenu.def /LIBPATH:"%SDK_LIB%\um\x64" /LIBPATH:"%SDK_LIB%\ucrt\x64" shlwapi.lib shell32.lib ole32.lib advapi32.lib
+          del /q src\win11\build\MagicodeNative.obj 2>nul
+          del /q src\win11\build\MagicodeNative.exp 2>nul
+          del /q src\win11\build\MagicodeNative.lib 2>nul
+
+      - name: Build stub executable
+        shell: pwsh
+        run: |
+          $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          $stubSrc = @"
+          class Program { static void Main() {} }
+          "@
+          Set-Content "stub.cs" $stubSrc
+          & $csc /nologo /target:exe /out:MagicodeUploader.exe stub.cs
+          Remove-Item stub.cs
+
+      - name: Create asset logos
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "Assets")) { New-Item Assets -ItemType Directory }
+          Add-Type -AssemblyName System.Drawing
+          foreach ($size in @(44, 150)) {
+            $bmp = New-Object System.Drawing.Bitmap $size, $size
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.Clear([System.Drawing.Color]::FromArgb(0x33, 0x99, 0xFF))
+            $font = New-Object System.Drawing.Font("Arial", [Math]::Max(10, $size/4), [System.Drawing.FontStyle]::Bold)
+            $sf = New-Object System.Drawing.StringFormat
+            $sf.Alignment = [System.Drawing.StringAlignment]::Center
+            $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+            $rect = New-Object System.Drawing.RectangleF(0, 0, $size, $size)
+            $g.DrawString("M", $font, [System.Drawing.Brushes]::White, $rect, $sf)
+            $g.Dispose()
+            $name = if ($size -eq 44) { "Square44x44Logo.png" } else { "Square150x150Logo.png" }
+            $bmp.Save("Assets\$name", [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Dispose()
+          }
+          Copy-Item "Assets\Square44x44Logo.png" "Assets\logo.png"
+
+      - name: Pack release
+        run: node scripts/pack.js
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MagicodeUploader-x64.zip
+          generate_release_notes: true

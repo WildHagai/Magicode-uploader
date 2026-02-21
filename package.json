@@ -1,0 +1,17 @@
+{
+  "name": "magicode-uploader",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "magicode-uploader": "src/main.js"
+  },
+  "scripts": {
+    "build:dll": "scripts\\build-dll.bat",
+    "pack": "node scripts/pack.js",
+    "install:app": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1",
+    "uninstall:app": "powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1"
+  },
+  "dependencies": {
+    "archiver": "^7.0.0"
+  }
+}

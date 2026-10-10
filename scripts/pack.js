@@ -16,11 +16,7 @@ const root = path.resolve(__dirname, '..');
 const distDir = path.join(root, 'dist');
 
 const FILES = [
-  'src/main.js',
-  'src/upload.js',
-  'src/zip.js',
-  'src/clipboard.js',
-  'src/notify.js',
+  ...fs.readdirSync(path.join(root, 'src')).filter((f) => f.endsWith('.js')).map((f) => `src/${f}`),
   'src/win11/build/MagicodeNative.dll',
   'AppxManifest.xml',
   'MagicodeUploader.exe',

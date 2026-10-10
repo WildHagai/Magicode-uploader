@@ -1,5 +1,5 @@
 #define MyAppName "Magicode Uploader"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.2.1"
 #define MyAppPublisher "Magicode"
 #define MyAppURL "https://send.magicode.me"
 
@@ -25,11 +25,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 ; Source code
-Source: "..\src\main.js"; DestDir: "{app}\src"; Flags: ignoreversion
-Source: "..\src\upload.js"; DestDir: "{app}\src"; Flags: ignoreversion
-Source: "..\src\zip.js"; DestDir: "{app}\src"; Flags: ignoreversion
-Source: "..\src\clipboard.js"; DestDir: "{app}\src"; Flags: ignoreversion
-Source: "..\src\notify.js"; DestDir: "{app}\src"; Flags: ignoreversion
+Source: "..\src\*.js"; DestDir: "{app}\src"; Flags: ignoreversion
 
 ; Native DLL
 Source: "..\src\win11\build\MagicodeNative.dll"; DestDir: "{app}\src\win11\build"; Flags: ignoreversion

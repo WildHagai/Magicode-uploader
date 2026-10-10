@@ -1,6 +1,6 @@
 {
   "name": "magicode-uploader",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "bin": {
     "magicode-uploader": "src/main.js"

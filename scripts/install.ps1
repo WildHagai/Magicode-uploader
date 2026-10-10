@@ -36,9 +36,7 @@ New-Item "$InstallDir\src\win11\build" -ItemType Directory -Force | Out-Null
 New-Item "$InstallDir\scripts" -ItemType Directory -Force | Out-Null
 New-Item "$InstallDir\Assets" -ItemType Directory -Force | Out-Null
 
-foreach ($f in 'main.js', 'upload.js', 'zip.js', 'clipboard.js', 'notify.js') {
-    Copy-Item "$SourceRoot\src\$f" "$InstallDir\src\"
-}
+Copy-Item "$SourceRoot\src\*.js" "$InstallDir\src\"
 Copy-Item "$SourceRoot\src\win11\build\MagicodeNative.dll" "$InstallDir\src\win11\build\"
 if (Test-Path "$SourceRoot\node_modules") {
     Copy-Item "$SourceRoot\node_modules" "$InstallDir\node_modules" -Recurse

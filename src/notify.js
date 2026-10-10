@@ -1,122 +1,86 @@
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
-/**
- * Escape a string for safe embedding inside a PowerShell single-quoted
- * string literal.  Single quotes are the only characters that need
- * escaping inside PS single-quoted strings (doubled: ' -> '').
- * We also strip control characters that could break the command.
- */
-function psEscape(str) {
-  if (typeof str !== 'string') {
-    str = String(str);
+// One hidden PowerShell process owns a single tray icon for the whole upload.
+// Messages arrive on stdin as "<Info|Error> <base64 utf-8 text>" lines (base64
+// so non-ASCII file names survive the console code page). When stdin closes,
+// the last balloon stays up for a few seconds and the icon is removed.
+const NOTIFIER_SCRIPT = `
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$n = New-Object System.Windows.Forms.NotifyIcon
+$n.Icon = [System.Drawing.SystemIcons]::Information
+$n.Text = 'Magicode Uploader'
+$n.Visible = $true
+try {
+  while (($line = [Console]::In.ReadLine()) -ne $null) {
+    $kind, $b64 = $line -split ' ', 2
+    $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
+    if ($kind -eq 'Error') { $n.Icon = [System.Drawing.SystemIcons]::Error }
+    $n.BalloonTipTitle = 'Magicode Uploader'
+    $n.BalloonTipText = $text
+    $n.BalloonTipIcon = $kind
+    $n.ShowBalloonTip(5000)
   }
-  // Remove carriage-return / newline so the balloon text stays on one line,
-  // then escape single quotes for PowerShell single-quoted strings.
-  return str
-    .replace(/[\r\n]+/g, ' ')
-    .replace(/'/g, "''");
+  Start-Sleep -Seconds 6
+} finally {
+  $n.Dispose()
 }
+`;
 
-/**
- * Fire-and-forget a PowerShell balloon (toast) notification.
- * Failures are silently swallowed so they never crash the main app.
- *
- * @param {string} message  - The balloon body text.
- * @param {"Info"|"Error"} icon - BalloonTipIcon value.
- */
-function showBalloon(message, icon = 'Info') {
+let notifier = null;
+
+function getNotifier() {
+  if (notifier) return notifier;
   try {
-    const systemIcon = icon === 'Error' ? 'Error' : 'Information';
-    const escapedMessage = psEscape(message);
-
-    const ps = [
-      'Add-Type -AssemblyName System.Windows.Forms;',
-      '$n = New-Object System.Windows.Forms.NotifyIcon;',
-      `$n.Icon = [System.Drawing.SystemIcons]::${systemIcon};`,
-      '$n.Visible = $true;',
-      `$n.BalloonTipTitle = 'Magicode Uploader';`,
-      `$n.BalloonTipText = '${escapedMessage}';`,
-      `$n.BalloonTipIcon = '${icon}';`,
-      '$n.ShowBalloonTip(5000);',
-      'Start-Sleep -Milliseconds 5100;',
-      '$n.Dispose()',
-    ].join(' ');
-
-    exec(
-      `powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`,
-      () => {},
+    const encoded = Buffer.from(NOTIFIER_SCRIPT, 'utf16le').toString('base64');
+    notifier = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true, detached: true },
     );
+    notifier.on('error', () => {});
+    notifier.stdin.on('error', () => {});
+    notifier.unref();
   } catch {
-    // PowerShell may not be available – silently ignore.
+    notifier = null;
+  }
+  return notifier;
+}
+
+function showBalloon(text, kind = 'Info') {
+  try {
+    const p = getNotifier();
+    if (!p) return;
+    const oneLine = String(text).replace(/[\r\n]+/g, ' ').slice(0, 250);
+    p.stdin.write(`${kind} ${Buffer.from(oneLine, 'utf-8').toString('base64')}\n`);
+  } catch {
+    // Notifications are best-effort; never crash the upload.
   }
 }
 
-/**
- * Show a notification indicating that an upload is in progress.
- *
- * Accepts a single filename string.
- * @param {string} filename - Name of the file being uploaded.
- */
+/** Show a notification indicating that an upload is in progress. */
 export function showUploading(filename) {
-  try {
-    const name = typeof filename === 'string' ? filename : String(filename);
-    showBalloon(`Uploading ${name}...`);
-  } catch {
-    // Never crash the main app.
-  }
+  showBalloon(`Uploading ${filename}...`);
+}
+
+/** Show a success notification after a completed upload. */
+export function showSuccess(url, copied = true) {
+  showBalloon(copied
+    ? `Upload complete! Link copied to clipboard: ${url}`
+    : `Upload complete (copying to the clipboard failed): ${url}`);
+}
+
+/** Show an error notification when an upload fails. */
+export function showError(err) {
+  showBalloon(`Upload failed: ${err instanceof Error ? err.message : err}`, 'Error');
 }
 
 /**
- * Show a success notification after a completed upload.
- *
- * Can be called as:
- *   showSuccess(url)              – legacy / current main.js usage
- *   showSuccess(filename, url)    – new two-argument form
- *
- * @param {string} filenameOrUrl - Filename (when two args) or download URL (when one arg).
- * @param {string} [url]         - The download URL (optional second argument).
+ * Close the notifier's input so it can show the final balloon and exit on its
+ * own. Resolves once the message has been flushed to the notifier process.
  */
-export function showSuccess(filenameOrUrl, url) {
-  try {
-    if (url !== undefined) {
-      // Two-argument form: showSuccess(filename, url)
-      showBalloon(`Upload complete! URL copied to clipboard\n${url}`);
-    } else {
-      // One-argument form: showSuccess(url)  – backwards compatible
-      showBalloon(`Upload complete! URL copied to clipboard\n${filenameOrUrl}`);
-    }
-  } catch {
-    // Never crash the main app.
-  }
-}
-
-/**
- * Show an error notification when an upload fails.
- *
- * Can be called as:
- *   showError(error)                 – legacy: Error object
- *   showError(filename, errorMsg)    – new two-argument form
- *
- * @param {string|Error} filenameOrError - Filename (when two args) or Error object (when one arg).
- * @param {string}       [errorMessage]  - The error description (optional second argument).
- */
-export function showError(filenameOrError, errorMessage) {
-  try {
-    let text;
-
-    if (errorMessage !== undefined) {
-      // Two-argument form: showError(filename, errorMessage)
-      text = `Upload failed for ${filenameOrError}: ${errorMessage}`;
-    } else if (filenameOrError instanceof Error) {
-      // Legacy one-argument form with an Error object.
-      text = `Upload failed: ${filenameOrError.message}`;
-    } else {
-      // Fallback: treat the single argument as a plain string message.
-      text = `Upload failed: ${filenameOrError}`;
-    }
-
-    showBalloon(text, 'Error');
-  } catch {
-    // Never crash the main app.
-  }
+export function finishNotifications() {
+  return new Promise((resolve) => {
+    if (!notifier?.stdin?.writable) return resolve();
+    notifier.stdin.end(resolve);
+  });
 }

@@ -4,15 +4,22 @@ import path from 'node:path';
 
 const BASE_URL = 'send.magicode.me';
 
+// Same chunk size the send.magicode.me web client uses.
+const CHUNK_SIZE = 2 * 1024 * 1024;
+const CHUNK_ATTEMPTS = 5;
+const REQUEST_TIMEOUT_MS = 120000;
+
+const agent = new https.Agent({ keepAlive: true, maxSockets: 1 });
+
 /**
- * Make an HTTPS request and return parsed JSON.
+ * Make an HTTPS request and return the status code and parsed JSON body.
  * @param {object} options - Node https.request options.
  * @param {Buffer|null} body - Request body to write (or null for no body).
- * @returns {Promise<object>} Parsed JSON response.
+ * @returns {Promise<{statusCode: number, data: object}>}
  */
 function jsonRequest(options, body) {
   return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
+    const req = https.request({ agent, ...options }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
@@ -20,26 +27,16 @@ function jsonRequest(options, body) {
         try {
           resolve({ statusCode: res.statusCode, data: JSON.parse(raw) });
         } catch {
-          reject(new Error(`jsonRequest received invalid JSON response (HTTP ${res.statusCode}): ${raw}`));
+          reject(new Error(`invalid JSON response (HTTP ${res.statusCode}): ${raw.slice(0, 200)}`));
         }
       });
+      res.on('error', reject);
     });
-    req.on('error', (err) => {
-      reject(new Error(`jsonRequest failed during HTTPS request: ${err.message}`));
+    req.on('error', (err) => reject(new Error(`HTTPS request failed: ${err.message}`)));
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      req.destroy(new Error(`request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds`));
     });
-    req.setTimeout(60000, () => {
-      req.destroy(new Error('jsonRequest timed out after 60 seconds'));
-    });
-    req.on('socket', (socket) => {
-      socket.setTimeout(60000);
-      socket.on('timeout', () => {
-        req.destroy(new Error('Socket timed out'));
-      });
-    });
-    if (body) {
-      req.write(body);
-    }
-    req.end();
+    req.end(body ?? undefined);
   });
 }
 
@@ -51,12 +48,9 @@ function jsonRequest(options, body) {
  * @returns {Promise<{keyUpload: string, keyFile: string}>}
  */
 export async function prepUpload(filename, size) {
-  const payload = Buffer.from(
-    JSON.stringify({ filename, size }),
-    'utf-8',
-  );
+  const payload = Buffer.from(JSON.stringify({ filename, size }), 'utf-8');
 
-  const options = {
+  const { statusCode, data } = await jsonRequest({
     hostname: BASE_URL,
     port: 443,
     path: '/send-file/prep-upload',
@@ -65,14 +59,11 @@ export async function prepUpload(filename, size) {
       'Content-Type': 'application/json; charset=utf-8',
       'Content-Length': payload.length,
     },
-  };
-
-  const { statusCode, data } = await jsonRequest(options, payload);
+  }, payload);
 
   if (statusCode < 200 || statusCode >= 300) {
     throw new Error(`prep-upload failed with HTTP ${statusCode}: ${JSON.stringify(data)}`);
   }
-
   if (!data.keyUpload || !data.keyFile) {
     throw new Error(`prep-upload returned unexpected payload: ${JSON.stringify(data)}`);
   }
@@ -81,106 +72,89 @@ export async function prepUpload(filename, size) {
 }
 
 /**
- * Step 2 -- Stream the file data to the server as multipart/form-data.
- * The multipart body is constructed manually with a fixed boundary.
+ * Send one chunk of the file as multipart/form-data.
+ * @returns {Promise<object>} Parsed JSON response ({ ok, end }).
+ */
+async function sendChunk(chunk, position, keyUpload, keyFile) {
+  const boundary = '----MagicodeUploader' + Math.random().toString(16).slice(2);
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+    'Content-Disposition: form-data; name="file"; filename="blob"\r\n' +
+    'Content-Type: application/octet-stream\r\n\r\n',
+    'utf-8',
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf-8');
+  const body = Buffer.concat([head, chunk, tail]);
+
+  const { statusCode, data } = await jsonRequest({
+    hostname: BASE_URL,
+    port: 443,
+    path:
+      `/send-file/data-upload?position=${position}&length=${chunk.length}` +
+      `&keyUpload=${encodeURIComponent(keyUpload)}` +
+      `&keyFile=${encodeURIComponent(keyFile)}`,
+    method: 'POST',
+    headers: {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      'Content-Length': body.length,
+    },
+  }, body);
+
+  if (statusCode < 200 || statusCode >= 300 || !data.ok) {
+    throw new Error(`data-upload at byte ${position} failed (HTTP ${statusCode}): ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
+/**
+ * Step 2 -- Upload the file in chunks, retrying each chunk a few times
+ * before giving up. Only one chunk is held in memory at a time.
  *
  * @param {string} filePath - Absolute path to the file.
  * @param {number} fileSize - File size in bytes.
  * @param {string} keyUpload - Upload key from prep-upload.
  * @param {string} keyFile - File key from prep-upload.
  * @param {function} [onProgress] - Optional callback: { uploaded, total, percent }.
- * @returns {Promise<object>} Parsed JSON response from the server.
  */
 export async function dataUpload(filePath, fileSize, keyUpload, keyFile, onProgress) {
-  const boundary = '----1234';
-  const header = `------1234\r\nContent-Disposition: form-data; name="file"; filename="blob"\r\nContent-Type: application/octet-stream\r\n\r\n`;
-  const footer = `\r\n------1234--\r\n`;
+  const fd = await fs.promises.open(filePath, 'r');
+  try {
+    let position = 0;
+    do {
+      const length = Math.min(CHUNK_SIZE, fileSize - position);
+      const chunk = Buffer.alloc(length);
+      const { bytesRead } = await fd.read(chunk, 0, length, position);
+      if (bytesRead !== length) {
+        throw new Error(`file changed while uploading (read ${bytesRead} of ${length} bytes at ${position})`);
+      }
 
-  const headerBuf = Buffer.from(header, 'utf-8');
-  const footerBuf = Buffer.from(footer, 'utf-8');
-  const totalLength = headerBuf.length + fileSize + footerBuf.length;
-
-  const queryPath =
-    `/send-file/data-upload?position=0&length=${fileSize}` +
-    `&keyUpload=${encodeURIComponent(keyUpload)}` +
-    `&keyFile=${encodeURIComponent(keyFile)}`;
-
-  const options = {
-    hostname: BASE_URL,
-    port: 443,
-    path: queryPath,
-    method: 'POST',
-    headers: {
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      'Content-Length': totalLength,
-      Connection: 'keep-alive',
-    },
-  };
-
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => {
-        const raw = Buffer.concat(chunks).toString('utf-8');
+      let result;
+      for (let attempt = 1; ; attempt++) {
         try {
-          const data = JSON.parse(raw);
-          if (res.statusCode < 200 || res.statusCode >= 300) {
-            return reject(
-              new Error(`data-upload failed with HTTP ${res.statusCode}: ${raw}`),
-            );
-          }
-          resolve(data);
-        } catch {
-          reject(new Error(`dataUpload received invalid JSON response (HTTP ${res.statusCode}): ${raw}`));
+          result = await sendChunk(chunk, position, keyUpload, keyFile);
+          break;
+        } catch (err) {
+          if (attempt >= CHUNK_ATTEMPTS) throw err;
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
         }
-      });
-    });
+      }
 
-    req.on('error', (err) => {
-      reject(new Error(`dataUpload failed during HTTPS request: ${err.message}`));
-    });
-    req.setTimeout(1800000, () => {
-      req.destroy(new Error('dataUpload timed out after 30 minutes'));
-    });
-    req.on('socket', (socket) => {
-      socket.setTimeout(60000);
-      socket.on('timeout', () => {
-        req.destroy(new Error('Socket timed out - no data received for 60 seconds'));
-      });
-    });
-
-    // Write the multipart header.
-    req.write(headerBuf);
-
-    // Stream the file content without loading it fully into memory.
-    const readStream = fs.createReadStream(filePath);
-    let uploaded = 0;
-
-    readStream.on('data', (chunk) => {
-      req.write(chunk);
-      uploaded += chunk.length;
-      req.socket?.setTimeout(60000);
+      position += length;
       if (typeof onProgress === 'function') {
         onProgress({
-          uploaded,
+          uploaded: position,
           total: fileSize,
-          percent: Math.round((uploaded / fileSize) * 100),
+          percent: fileSize ? Math.round((position / fileSize) * 100) : 100,
         });
       }
-    });
 
-    readStream.on('error', (err) => {
-      req.destroy(err);
-      reject(new Error(`dataUpload failed to read file stream at ${uploaded}/${fileSize} bytes: ${err.message}`));
-    });
+      if (result.end) return result;
+    } while (position < fileSize);
 
-    readStream.on('end', () => {
-      // Write the multipart footer and finish the request.
-      req.write(footerBuf);
-      req.end();
-    });
-  });
+    throw new Error('server never acknowledged the end of the upload');
+  } finally {
+    await fd.close();
+  }
 }
 
 /**
@@ -192,7 +166,6 @@ export async function dataUpload(filePath, fileSize, keyUpload, keyFile, onProgr
  */
 export async function uploadFile(filePath, onProgress) {
   try {
-    // Resolve and validate the file path.
     const resolved = path.resolve(filePath);
     let stat;
     try {
@@ -205,26 +178,17 @@ export async function uploadFile(filePath, onProgress) {
       return { success: false, error: `Path is not a file: ${resolved}` };
     }
 
-    const fileSize = stat.size;
-    const filename = path.basename(resolved);
-
-    // Step 1: Prepare the upload.
-    const { keyUpload, keyFile } = await prepUpload(filename, fileSize);
-
-    // Step 2: Stream the file data.
-    const result = await dataUpload(resolved, fileSize, keyUpload, keyFile, onProgress);
-
-    if (!result.ok) {
-      return {
-        success: false,
-        error: `Upload completed but server responded with ok=false: ${JSON.stringify(result)}`,
-      };
+    if (stat.size === 0) {
+      return { success: false, error: `${path.basename(resolved)} is empty (send.magicode.me rejects empty files)` };
     }
 
-    const downloadUrl = `https://send.magicode.me/send-file/file/${keyFile}/view`;
+    const { keyUpload, keyFile } = await prepUpload(path.basename(resolved), stat.size);
+    await dataUpload(resolved, stat.size, keyUpload, keyFile, onProgress);
 
-    return { success: true, downloadUrl };
+    return { success: true, downloadUrl: `https://${BASE_URL}/send-file/file/${keyFile}/view` };
   } catch (err) {
     return { success: false, error: err.message };
+  } finally {
+    agent.destroy();
   }
 }

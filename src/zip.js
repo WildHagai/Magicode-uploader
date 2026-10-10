@@ -1,61 +1,53 @@
 import archiver from 'archiver';
 import { createWriteStream } from 'fs';
-import { access, constants } from 'fs/promises';
+import { mkdtemp, stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join, basename } from 'path';
-import { randomBytes } from 'crypto';
 
 /**
- * Compress multiple files into a single ZIP archive.
- * @param {string[]} filePaths - Array of absolute file paths to include.
- * @param {string} [outputPath] - Absolute path for the resulting ZIP file.
- *   If omitted, a temporary file in os.tmpdir() is used.
+ * Compress files and/or directories into a single ZIP archive.
+ * Directories are added recursively under their own name.
+ *
+ * @param {string[]} paths - Absolute paths of the files/directories to include.
+ * @param {string} zipName - File name of the archive (e.g. "Photos.zip").
+ *   It is created in a fresh temporary directory so the name never collides.
  * @returns {Promise<string>} The absolute path of the created ZIP file.
  */
-export async function zipFiles(filePaths, outputPath) {
-  if (!Array.isArray(filePaths) || filePaths.length === 0) {
-    throw new Error('filePaths must be a non-empty array of file paths');
+export async function zipFiles(paths, zipName) {
+  if (!Array.isArray(paths) || paths.length === 0) {
+    throw new Error('paths must be a non-empty array');
   }
 
-  // Verify every input file exists and is readable before we start archiving.
-  for (const fp of filePaths) {
+  const entries = [];
+  for (const p of paths) {
+    let s;
     try {
-      await access(fp, constants.R_OK);
+      s = await stat(p);
     } catch {
-      throw new Error(`File not found or not readable: ${fp}`);
+      throw new Error(`File not found or not readable: ${p}`);
     }
+    entries.push({ path: p, isDir: s.isDirectory() });
   }
 
-  // Determine the output location.
-  if (!outputPath) {
-    const id = randomBytes(8).toString('hex');
-    outputPath = join(tmpdir(), `archive-${id}.zip`);
-  }
+  const outputPath = join(await mkdtemp(join(tmpdir(), 'magicode-')), zipName);
 
   return new Promise((resolve, reject) => {
     const output = createWriteStream(outputPath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = archiver('zip', { zlib: { level: 6 } });
 
     output.on('close', () => resolve(outputPath));
-
-    output.on('error', (err) => {
-      reject(new Error(`Write error: ${err.message}`));
-    });
-
-    archive.on('error', (err) => {
-      reject(new Error(`Archive error: ${err.message}`));
-    });
-
-    archive.on('warning', (err) => {
-      if (err.code !== 'ENOENT') {
-        reject(new Error(`Archive warning: ${err.message}`));
-      }
-    });
+    output.on('error', (err) => reject(new Error(`Write error: ${err.message}`)));
+    archive.on('error', (err) => reject(new Error(`Archive error: ${err.message}`)));
+    archive.on('warning', (err) => reject(new Error(`Archive warning: ${err.message}`)));
 
     archive.pipe(output);
 
-    for (const fp of filePaths) {
-      archive.file(fp, { name: basename(fp) });
+    for (const e of entries) {
+      if (e.isDir) {
+        archive.directory(e.path, basename(e.path));
+      } else {
+        archive.file(e.path, { name: basename(e.path) });
+      }
     }
 
     archive.finalize();

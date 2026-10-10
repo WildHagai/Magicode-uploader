@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 /**
  * Copy the given text to the system clipboard using clip.exe.
@@ -8,10 +8,11 @@ import { execSync } from 'child_process';
  */
 export async function copyToClipboard(text) {
   try {
-    execSync('clip', {
+    execFileSync('clip.exe', [], {
       input: String(text),
       stdio: ['pipe', 'ignore', 'ignore'],
       timeout: 5000,
+      windowsHide: true,
     });
     return { success: true };
   } catch (err) {

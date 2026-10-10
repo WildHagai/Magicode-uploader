@@ -21,8 +21,6 @@ const FILES = [
   'src/zip.js',
   'src/clipboard.js',
   'src/notify.js',
-  'src/registry.js',
-  'src/launcher.vbs',
   'src/win11/build/MagicodeNative.dll',
   'AppxManifest.xml',
   'MagicodeUploader.exe',
@@ -32,6 +30,8 @@ const FILES = [
   'package.json',
   'scripts/install.ps1',
   'scripts/uninstall.ps1',
+  'scripts/write-config.ps1',
+  'scripts/register-win11.ps1',
 ];
 
 // Check that native DLL exists

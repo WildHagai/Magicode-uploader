@@ -1,5 +1,5 @@
 #define MyAppName "Magicode Uploader"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Magicode"
 #define MyAppURL "https://send.magicode.me"
 
@@ -30,8 +30,6 @@ Source: "..\src\upload.js"; DestDir: "{app}\src"; Flags: ignoreversion
 Source: "..\src\zip.js"; DestDir: "{app}\src"; Flags: ignoreversion
 Source: "..\src\clipboard.js"; DestDir: "{app}\src"; Flags: ignoreversion
 Source: "..\src\notify.js"; DestDir: "{app}\src"; Flags: ignoreversion
-Source: "..\src\registry.js"; DestDir: "{app}\src"; Flags: ignoreversion
-Source: "..\src\launcher.vbs"; DestDir: "{app}\src"; Flags: ignoreversion
 
 ; Native DLL
 Source: "..\src\win11\build\MagicodeNative.dll"; DestDir: "{app}\src\win11\build"; Flags: ignoreversion
@@ -50,30 +48,35 @@ Source: "..\Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion
 ; Install scripts
 Source: "register-win11.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "write-config.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
-
-[Registry]
-; Classic context menu - files
-Root: HKCU; Subkey: "Software\Classes\*\shell\MagicodeUpload"; ValueType: string; ValueName: ""; ValueData: "Upload to Magicode"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\*\shell\MagicodeUpload"; ValueType: string; ValueName: "Icon"; ValueData: "imageres.dll,112"
-Root: HKCU; Subkey: "Software\Classes\*\shell\MagicodeUpload"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"
-Root: HKCU; Subkey: "Software\Classes\*\shell\MagicodeUpload\command"; ValueType: string; ValueName: ""; ValueData: "wscript.exe ""{app}\src\launcher.vbs"" ""%1"""
-
-; Classic context menu - directories
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\MagicodeUpload"; ValueType: string; ValueName: ""; ValueData: "Upload to Magicode"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\MagicodeUpload"; ValueType: string; ValueName: "Icon"; ValueData: "imageres.dll,112"
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\MagicodeUpload\command"; ValueType: string; ValueName: ""; ValueData: "wscript.exe ""{app}\src\launcher.vbs"" ""%1"""
+Source: "uninstall.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 [Run]
 ; Write magicode-config.json with correct paths after install
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\write-config.ps1"" -AppDir ""{app}"""; Flags: runhidden shellexec waituntilterminated
-; Register sparse MSIX package for Win11 modern context menu (enables Developer Mode if needed)
+; Register the context menu: sparse package on Win11 (enables Developer Mode if needed), classic verb otherwise
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\register-win11.ps1"" -AppDir ""{app}"""; Flags: runhidden shellexec waituntilterminated
 
 [UninstallRun]
-; Remove sparse MSIX package
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-AppxPackage MagicodeUploader -ErrorAction SilentlyContinue | Remove-AppxPackage -ErrorAction SilentlyContinue"""; Flags: runhidden shellexec waituntilterminated
+; Remove the sparse package and any classic context menu keys
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\uninstall.ps1"" -Quiet -KeepFiles"; Flags: runhidden shellexec waituntilterminated
+
+[UninstallDelete]
+Type: files; Name: "{app}\src\win11\build\magicode-config.json"
+Type: files; Name: "{app}\upload.log"
 
 [Code]
+// The installed DLL stays loaded by the package's COM surrogate (or Explorer),
+// so release it before files are replaced on upgrade.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Exec('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -Command "Get-AppxPackage MagicodeUploader -ErrorAction SilentlyContinue | Remove-AppxPackage -ErrorAction SilentlyContinue; ' +
+    'Get-Process dllhost -ErrorAction SilentlyContinue | Where-Object { try { $_.Modules.ModuleName -contains ''MagicodeNative.dll'' } catch { $false } } | Stop-Process -Force -ErrorAction SilentlyContinue"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
+
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;

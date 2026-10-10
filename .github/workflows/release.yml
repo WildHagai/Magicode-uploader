@@ -84,7 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $iss = Get-Content scripts\installer.iss -Raw
-          $iss = $iss -replace '#define MyAppVersion "1.0.0"', "#define MyAppVersion `"${{ steps.version.outputs.VERSION }}`""
+          $iss = $iss -replace '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"${{ steps.version.outputs.VERSION }}`""
           Set-Content scripts\installer.iss $iss
 
       - name: Build installer with Inno Setup

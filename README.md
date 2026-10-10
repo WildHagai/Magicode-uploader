@@ -78,12 +78,14 @@ The GitHub Action handles all of this automatically when a version tag is pushed
 | Component | Purpose |
 |---|---|
 | `src/main.js` | Uploads files, copies URL to clipboard, shows notifications |
-| `src/launcher.vbs` | Launches node.exe without a console window |
-| `src/win11/MagicodeNative.dll` | Native C++ IExplorerCommand handler for Win11 modern context menu |
+| `src/win11/MagicodeNative.dll` | Native C++ IExplorerCommand handler that launches node.exe without a console window |
 | `AppxManifest.xml` | Sparse MSIX package for Win11 context menu identity |
+| `scripts/register-win11.ps1` | Registers the sparse package, or the classic fallback verb |
 | `scripts/installer.iss` | Inno Setup script that builds the single-file installer |
 
-The Win11 modern context menu requires a native COM DLL implementing `IExplorerCommand` plus a sparse MSIX package for app identity. The classic context menu uses a simple registry-based `shell\verb\command` entry that launches `wscript.exe` with a VBScript wrapper to hide the console window.
+The Win11 modern context menu requires a native COM DLL implementing `IExplorerCommand` plus a sparse MSIX package for app identity; the packaged command also shows under "Show more options". Where the package can't be registered (Windows 10, or Developer Mode declined), the same DLL is registered as a classic `ExplorerCommandHandler` verb instead. Either way the whole selection arrives in one call, so multiple files and folders are zipped into one upload.
+
+Folders are zipped before uploading. Errors and uploaded links are logged to `upload.log` in the install folder.
 
 ## Releasing
 

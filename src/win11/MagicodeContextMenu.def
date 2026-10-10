@@ -1,4 +1,4 @@
-LIBRARY MagicodeContextMenu
+LIBRARY MagicodeNative
 EXPORTS
     DllGetClassObject   PRIVATE
     DllCanUnloadNow     PRIVATE

@@ -3,7 +3,9 @@ setlocal
 
 :: Find Visual Studio vcvarsall.bat
 set "VCVARS="
-for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find "VC\Auxiliary\Build\vcvarsall.bat" 2^>nul`) do set "VCVARS=%%i"
+:: (vswhere's path is kept in a variable: the ")" in "%ProgramFiles(x86)%" would close the for-loop parentheses)
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -find "VC\Auxiliary\Build\vcvarsall.bat" 2^>nul`) do set "VCVARS=%%i"
 if "%VCVARS%"=="" (
     if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" (
         set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"

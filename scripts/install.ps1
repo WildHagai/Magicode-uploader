@@ -1,5 +1,6 @@
-# Magicode Uploader - Installer
-# Run: powershell -ExecutionPolicy Bypass -File install.ps1
+# Magicode Uploader - Installer (without Inno Setup)
+# Run from the repo or an unpacked release zip:
+#   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 param(
     [string]$InstallDir = "$env:LOCALAPPDATA\Programs\MagicodeUploader"
 )
@@ -15,112 +16,52 @@ if (-not $node) {
 }
 Write-Host "Node.js: $($node.Source)"
 
-# --- Determine source directory (where this script lives) ---
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
+# --- Source directory is the parent of the scripts folder ---
+$SourceRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Definition)
 
-# --- Create install directory ---
+# --- Release the previous installation's DLL before replacing files ---
+Get-AppxPackage MagicodeUploader -ErrorAction SilentlyContinue | Remove-AppxPackage -ErrorAction SilentlyContinue
+Get-Process dllhost -ErrorAction SilentlyContinue |
+    Where-Object { try { $_.Modules.ModuleName -contains 'MagicodeNative.dll' } catch { $false } } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+
 if (Test-Path $InstallDir) {
     Write-Host "Removing previous installation..."
     Remove-Item $InstallDir -Recurse -Force
 }
-New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 
 # --- Copy application files ---
 Write-Host "Copying files to $InstallDir..."
-
-# Core source
-New-Item "$InstallDir\src" -ItemType Directory -Force | Out-Null
-Copy-Item "$ScriptRoot\src\main.js" "$InstallDir\src\"
-Copy-Item "$ScriptRoot\src\upload.js" "$InstallDir\src\"
-Copy-Item "$ScriptRoot\src\zip.js" "$InstallDir\src\"
-Copy-Item "$ScriptRoot\src\clipboard.js" "$InstallDir\src\"
-Copy-Item "$ScriptRoot\src\notify.js" "$InstallDir\src\"
-Copy-Item "$ScriptRoot\src\registry.js" "$InstallDir\src\"
-Copy-Item "$ScriptRoot\src\launcher.vbs" "$InstallDir\src\"
-
-# Native DLL for Win11 context menu
 New-Item "$InstallDir\src\win11\build" -ItemType Directory -Force | Out-Null
-Copy-Item "$ScriptRoot\src\win11\build\MagicodeNative.dll" "$InstallDir\src\win11\build\"
-
-# Node modules
-if (Test-Path "$ScriptRoot\node_modules") {
-    Copy-Item "$ScriptRoot\node_modules" "$InstallDir\node_modules" -Recurse
-}
-
-# Package files
-Copy-Item "$ScriptRoot\package.json" "$InstallDir\"
-
-# MSIX sparse package files
-Copy-Item "$ScriptRoot\AppxManifest.xml" "$InstallDir\"
-Copy-Item "$ScriptRoot\MagicodeUploader.exe" "$InstallDir\"
+New-Item "$InstallDir\scripts" -ItemType Directory -Force | Out-Null
 New-Item "$InstallDir\Assets" -ItemType Directory -Force | Out-Null
-Copy-Item "$ScriptRoot\Assets\*" "$InstallDir\Assets\"
 
-# Uninstaller
-Copy-Item "$ScriptRoot\scripts\uninstall.ps1" "$InstallDir\uninstall.ps1"
-
-# --- Write config with correct paths ---
-$nodePath = (Get-Command node).Source -replace '\\', '\\\\'
-$mainJsPath = ("$InstallDir\src\main.js") -replace '\\', '\\\\'
-$configJson = @"
-{
-  "nodePath": "$nodePath",
-  "mainJsPath": "$mainJsPath"
+foreach ($f in 'main.js', 'upload.js', 'zip.js', 'clipboard.js', 'notify.js') {
+    Copy-Item "$SourceRoot\src\$f" "$InstallDir\src\"
 }
-"@
-Set-Content "$InstallDir\src\win11\build\magicode-config.json" $configJson -Encoding UTF8
-
-# --- Update AppxManifest.xml with correct DLL path ---
-$manifest = Get-Content "$InstallDir\AppxManifest.xml" -Raw
-$manifest = $manifest -replace 'src\\win11\\build\\MagicodeNative\.dll', 'src\win11\build\MagicodeNative.dll'
-Set-Content "$InstallDir\AppxManifest.xml" $manifest -Encoding UTF8
-
-# --- Register classic context menu ---
-Write-Host "Registering context menu..."
-$launcherPath = "$InstallDir\src\launcher.vbs"
-$command = "wscript.exe `"$launcherPath`" `"%1`""
-
-$fileKey = 'HKCU:\Software\Classes\*\shell\MagicodeUpload'
-$dirKey = 'HKCU:\Software\Classes\Directory\shell\MagicodeUpload'
-
-# File context menu
-New-Item -Path "$fileKey\command" -Force | Out-Null
-Set-ItemProperty -Path $fileKey -Name '(Default)' -Value 'Upload to Magicode'
-Set-ItemProperty -Path $fileKey -Name 'Icon' -Value 'imageres.dll,112'
-Set-ItemProperty -Path $fileKey -Name 'MultiSelectModel' -Value 'Player'
-Set-ItemProperty -Path "$fileKey\command" -Name '(Default)' -Value $command
-
-# Directory context menu
-New-Item -Path "$dirKey\command" -Force | Out-Null
-Set-ItemProperty -Path $dirKey -Name '(Default)' -Value 'Upload to Magicode'
-Set-ItemProperty -Path $dirKey -Name 'Icon' -Value 'imageres.dll,112'
-Set-ItemProperty -Path "$dirKey\command" -Name '(Default)' -Value $command
-
-# --- Register sparse MSIX package for Win11 modern context menu ---
-Write-Host "Registering Win11 context menu (sparse package)..."
-try {
-    # Remove old package if exists
-    Get-AppxPackage MagicodeUploader -ErrorAction SilentlyContinue | Remove-AppxPackage -ErrorAction SilentlyContinue
-
-    $devMode = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -ErrorAction SilentlyContinue).AllowDevelopmentWithoutDevLicense
-    if ($devMode -eq 1) {
-        Add-AppxPackage -Register "$InstallDir\AppxManifest.xml" -ExternalLocation $InstallDir
-        Write-Host "  Win11 modern context menu registered." -ForegroundColor Green
-    } else {
-        Write-Host "  Developer Mode not enabled - Win11 modern context menu skipped." -ForegroundColor Yellow
-        Write-Host "  The classic context menu (Show more options) will still work."
-    }
-} catch {
-    Write-Host "  Win11 context menu registration failed: $_" -ForegroundColor Yellow
-    Write-Host "  The classic context menu (Show more options) will still work."
+Copy-Item "$SourceRoot\src\win11\build\MagicodeNative.dll" "$InstallDir\src\win11\build\"
+if (Test-Path "$SourceRoot\node_modules") {
+    Copy-Item "$SourceRoot\node_modules" "$InstallDir\node_modules" -Recurse
 }
+Copy-Item "$SourceRoot\package.json" "$InstallDir\"
+Copy-Item "$SourceRoot\AppxManifest.xml" "$InstallDir\"
+Copy-Item "$SourceRoot\MagicodeUploader.exe" "$InstallDir\"
+Copy-Item "$SourceRoot\Assets\*" "$InstallDir\Assets\"
+foreach ($f in 'write-config.ps1', 'register-win11.ps1') {
+    Copy-Item "$SourceRoot\scripts\$f" "$InstallDir\scripts\"
+}
+Copy-Item "$SourceRoot\scripts\uninstall.ps1" "$InstallDir\uninstall.ps1"
+
+# --- Config + context menu ---
+& "$InstallDir\scripts\write-config.ps1" -AppDir $InstallDir
+& "$InstallDir\scripts\register-win11.ps1" -AppDir $InstallDir
 
 # --- Register in Apps & Features ---
-Write-Host "Registering in Apps & Features..."
+$version = (Get-Content "$SourceRoot\package.json" -Raw | ConvertFrom-Json).version
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MagicodeUploader'
 New-Item -Path $uninstallKey -Force | Out-Null
 Set-ItemProperty -Path $uninstallKey -Name 'DisplayName' -Value 'Magicode Uploader'
-Set-ItemProperty -Path $uninstallKey -Name 'DisplayVersion' -Value '1.0.0'
+Set-ItemProperty -Path $uninstallKey -Name 'DisplayVersion' -Value $version
 Set-ItemProperty -Path $uninstallKey -Name 'Publisher' -Value 'Magicode'
 Set-ItemProperty -Path $uninstallKey -Name 'InstallLocation' -Value $InstallDir
 Set-ItemProperty -Path $uninstallKey -Name 'UninstallString' -Value "powershell -ExecutionPolicy Bypass -File `"$InstallDir\uninstall.ps1`""
@@ -132,5 +73,5 @@ Set-ItemProperty -Path $uninstallKey -Name 'DisplayIcon' -Value 'imageres.dll,11
 Write-Host ""
 Write-Host "Magicode Uploader installed successfully!" -ForegroundColor Green
 Write-Host "  Location: $InstallDir"
-Write-Host "  Right-click any file to see 'Upload to Magicode'"
+Write-Host "  Right-click any file or folder to see 'Upload to Magicode'"
 Write-Host ""

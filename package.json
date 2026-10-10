@@ -2,6 +2,9 @@
   "name": "magicode-uploader",
   "version": "1.2.1",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "magicode-uploader": "src/main.js"
   },

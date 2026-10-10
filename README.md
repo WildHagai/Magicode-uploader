@@ -65,6 +65,7 @@ node src/main.js <file1> [file2] [file3] ...
 
 ### Prerequisites
 
+- **Node.js 22** (21+ is needed for `npm test`; CI builds and tests with 22). Running the app only needs 18+.
 - Visual Studio 2022 (with C++ desktop workload)
 - Windows SDK
 - [Inno Setup 6](https://jrsoftware.org/isinfo.php)
@@ -87,7 +88,7 @@ The GitHub Action handles all of this automatically when a version tag is pushed
 ### Tests
 
 ```bash
-npm test            # (Node 21+) unit tests + end-to-end CLI tests against a local mock server
+npm test            # unit tests + end-to-end CLI tests against a local mock server
 npm run test:live   # also upload to the real send.magicode.me and download it back
 npm run test:shell  # drive the installed context menu through the Windows shell
 ```

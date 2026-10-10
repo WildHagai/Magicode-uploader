@@ -1,25 +1,34 @@
+import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const BASE_URL = 'send.magicode.me';
+// MAGICODE_BASE_URL lets tests point the uploader at a local mock server.
+const BASE_URL = new URL(process.env.MAGICODE_BASE_URL || 'https://send.magicode.me');
+const transport = BASE_URL.protocol === 'http:' ? http : https;
 
 // Same chunk size the send.magicode.me web client uses.
-const CHUNK_SIZE = 2 * 1024 * 1024;
-const CHUNK_ATTEMPTS = 5;
+export const CHUNK_SIZE = 2 * 1024 * 1024;
+export const CHUNK_ATTEMPTS = 5;
+const RETRY_DELAY_MS = Number(process.env.MAGICODE_RETRY_DELAY_MS) || 1000;
 const REQUEST_TIMEOUT_MS = 120000;
 
-const agent = new https.Agent({ keepAlive: true, maxSockets: 1 });
+const agent = new transport.Agent({ keepAlive: true, maxSockets: 1 });
 
 /**
  * Make an HTTPS request and return the status code and parsed JSON body.
- * @param {object} options - Node https.request options.
+ * @param {object} options - Node http(s).request options.
  * @param {Buffer|null} body - Request body to write (or null for no body).
  * @returns {Promise<{statusCode: number, data: object}>}
  */
 function jsonRequest(options, body) {
   return new Promise((resolve, reject) => {
-    const req = https.request({ agent, ...options }, (res) => {
+    const req = transport.request({
+      agent,
+      hostname: BASE_URL.hostname,
+      port: BASE_URL.port || (BASE_URL.protocol === 'http:' ? 80 : 443),
+      ...options,
+    }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
@@ -51,8 +60,6 @@ export async function prepUpload(filename, size) {
   const payload = Buffer.from(JSON.stringify({ filename, size }), 'utf-8');
 
   const { statusCode, data } = await jsonRequest({
-    hostname: BASE_URL,
-    port: 443,
     path: '/send-file/prep-upload',
     method: 'POST',
     headers: {
@@ -87,8 +94,6 @@ async function sendChunk(chunk, position, keyUpload, keyFile) {
   const body = Buffer.concat([head, chunk, tail]);
 
   const { statusCode, data } = await jsonRequest({
-    hostname: BASE_URL,
-    port: 443,
     path:
       `/send-file/data-upload?position=${position}&length=${chunk.length}` +
       `&keyUpload=${encodeURIComponent(keyUpload)}` +
@@ -135,7 +140,7 @@ export async function dataUpload(filePath, fileSize, keyUpload, keyFile, onProgr
           break;
         } catch (err) {
           if (attempt >= CHUNK_ATTEMPTS) throw err;
-          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * attempt));
         }
       }
 
@@ -185,7 +190,7 @@ export async function uploadFile(filePath, onProgress) {
     const { keyUpload, keyFile } = await prepUpload(path.basename(resolved), stat.size);
     await dataUpload(resolved, stat.size, keyUpload, keyFile, onProgress);
 
-    return { success: true, downloadUrl: `https://${BASE_URL}/send-file/file/${keyFile}/view` };
+    return { success: true, downloadUrl: new URL(`/send-file/file/${keyFile}/view`, BASE_URL).href };
   } catch (err) {
     return { success: false, error: err.message };
   } finally {

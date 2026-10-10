@@ -6,36 +6,17 @@ import { fileURLToPath } from 'node:url';
 import { uploadFile } from './upload.js';
 import { zipFiles } from './zip.js';
 import { copyToClipboard } from './clipboard.js';
-import { showUploading, showSuccess, showError, finishNotifications } from './notify.js';
+import { showUploading, showSuccess, showError, waitForNotifications } from './notify.js';
+import { readArgs, zipNameFor } from './args.js';
 
-const LOG_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'upload.log');
+const UPLOADING_DELAY_MS = Number(process.env.MAGICODE_UPLOADING_DELAY_MS ?? 1500);
+const LOG_PATH = process.env.MAGICODE_LOG_PATH
+  || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'upload.log');
 
 function log(message) {
   try {
     fs.appendFileSync(LOG_PATH, `${new Date().toISOString()} ${message}\n`);
   } catch {}
-}
-
-/**
- * Paths come either directly on the command line, or (from the Explorer
- * context menu) as `--list <file>`: a UTF-8 file with one path per line,
- * which avoids the command-line length limit on large selections.
- */
-function readArgs(argv) {
-  if (argv[0] === '--list' && argv[1]) {
-    const listFile = argv[1];
-    const text = fs.readFileSync(listFile, 'utf-8').replace(/^﻿/, '');
-    try { fs.unlinkSync(listFile); } catch {}
-    return text.split(/\r?\n/).filter(Boolean);
-  }
-  return argv;
-}
-
-/** Name for the archive when more than one item, or a folder, is uploaded. */
-function zipNameFor(paths) {
-  const nameOf = (p) => path.basename(p) || p.replace(/[:\\/]/g, '') || 'files';
-  const base = paths.length === 1 ? nameOf(paths[0]) : nameOf(path.dirname(paths[0]));
-  return `${base}.zip`;
 }
 
 async function main() {
@@ -50,15 +31,21 @@ async function main() {
     if (!fs.existsSync(p)) throw new Error(`File not found: ${p}`);
   }
 
+  const needsZip = paths.length > 1 || fs.statSync(paths[0]).isDirectory();
+  const label = needsZip
+    ? `${zipNameFor(paths)} (compressing ${paths.length} item${paths.length > 1 ? 's' : ''})`
+    : path.basename(paths[0]);
+
+  // Windows shows tray balloons one at a time, so an "Uploading..." balloon
+  // would hold back the result by several seconds. Only show it for slow uploads.
+  const uploadingTimer = setTimeout(() => showUploading(label), UPLOADING_DELAY_MS);
+
   let tempZipPath = null;
   try {
     let fileToUpload = paths[0];
-    if (paths.length > 1 || fs.statSync(paths[0]).isDirectory()) {
-      showUploading(`${zipNameFor(paths)} (compressing ${paths.length} item${paths.length > 1 ? 's' : ''})`);
+    if (needsZip) {
       tempZipPath = await zipFiles(paths, zipNameFor(paths));
       fileToUpload = tempZipPath;
-    } else {
-      showUploading(path.basename(fileToUpload));
     }
 
     const result = await uploadFile(fileToUpload);
@@ -72,6 +59,7 @@ async function main() {
     showSuccess(result.downloadUrl, clip.success);
     return 0;
   } finally {
+    clearTimeout(uploadingTimer);
     if (tempZipPath) {
       fs.rmSync(path.dirname(tempZipPath), { recursive: true, force: true });
     }
@@ -87,5 +75,5 @@ try {
   showError(err);
   exitCode = 1;
 }
-await finishNotifications();
+await waitForNotifications();
 process.exit(exitCode);

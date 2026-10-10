@@ -1,57 +1,59 @@
 import { spawn } from 'node:child_process';
 
-// One hidden PowerShell process owns a single tray icon for the whole upload.
-// Messages arrive on stdin as "<Info|Error> <base64 utf-8 text>" lines (base64
-// so non-ASCII file names survive the console code page). When stdin closes,
-// the last balloon stays up for a few seconds and the icon is removed.
-const NOTIFIER_SCRIPT = `
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-$n = New-Object System.Windows.Forms.NotifyIcon
-$n.Icon = [System.Drawing.SystemIcons]::Information
-$n.Text = 'Magicode Uploader'
-$n.Visible = $true
-try {
-  while (($line = [Console]::In.ReadLine()) -ne $null) {
-    $kind, $b64 = $line -split ' ', 2
-    $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
-    if ($kind -eq 'Error') { $n.Icon = [System.Drawing.SystemIcons]::Error }
-    $n.BalloonTipTitle = 'Magicode Uploader'
-    $n.BalloonTipText = $text
-    $n.BalloonTipIcon = $kind
-    $n.ShowBalloonTip(5000)
-  }
-  Start-Sleep -Seconds 6
-} finally {
-  $n.Dispose()
-}
-`;
+const pending = [];
 
-let notifier = null;
-
-function getNotifier() {
-  if (notifier) return notifier;
+/**
+ * Show a tray balloon (a toast on Windows 11) from a short-lived hidden
+ * PowerShell process. The text travels base64-encoded inside -EncodedCommand,
+ * so no shell quoting is involved and non-ASCII file names survive.
+ *
+ * Node kills non-detached children when it exits, and a `detached`
+ * powershell.exe has no console and exits without running the script - so the
+ * caller must await waitForNotifications() before exiting.
+ *
+ * @param {string} message - The balloon body text.
+ * @param {"Info"|"Error"} kind - Balloon icon.
+ */
+function showBalloon(message, kind = 'Info') {
   try {
-    const encoded = Buffer.from(NOTIFIER_SCRIPT, 'utf16le').toString('base64');
-    notifier = spawn(
+    const text = String(message).replace(/[\r\n]+/g, ' ').slice(0, 250);
+    const b64 = Buffer.from(text, 'utf-8').toString('base64');
+    const icon = kind === 'Error' ? 'Error' : 'Information';
+    // MAGICODE_NOTIFY_LOG (tests): run the same process and script, but append
+    // the message to that file instead of showing a balloon.
+    const testLog = process.env.MAGICODE_NOTIFY_LOG;
+    const display = testLog
+      ? [
+        `Start-Sleep -Milliseconds 1500`,
+        `[IO.File]::AppendAllText('${testLog.replace(/'/g, "''")}', "${kind} $text\`n", [Text.Encoding]::UTF8)`,
+      ]
+      : [
+        '$n.Visible = $true',
+        "$n.BalloonTipTitle = 'Magicode Uploader'",
+        '$n.BalloonTipText = $text',
+        `$n.BalloonTipIcon = '${kind === 'Error' ? 'Error' : 'Info'}'`,
+        '$n.ShowBalloonTip(5000)',
+        'Start-Sleep -Milliseconds 5100',
+      ];
+    const script = [
+      'Add-Type -AssemblyName System.Windows.Forms, System.Drawing',
+      `$text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}'))`,
+      '$n = New-Object System.Windows.Forms.NotifyIcon',
+      `$n.Icon = [System.Drawing.SystemIcons]::${icon}`,
+      ...display,
+      '$n.Dispose()',
+    ].join('\n');
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+
+    const child = spawn(
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-      { stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true, detached: true },
+      { stdio: 'ignore', windowsHide: true },
     );
-    notifier.on('error', () => {});
-    notifier.stdin.on('error', () => {});
-    notifier.unref();
-  } catch {
-    notifier = null;
-  }
-  return notifier;
-}
-
-function showBalloon(text, kind = 'Info') {
-  try {
-    const p = getNotifier();
-    if (!p) return;
-    const oneLine = String(text).replace(/[\r\n]+/g, ' ').slice(0, 250);
-    p.stdin.write(`${kind} ${Buffer.from(oneLine, 'utf-8').toString('base64')}\n`);
+    pending.push(new Promise((resolve) => {
+      child.on('error', resolve);
+      child.on('exit', resolve);
+    }));
   } catch {
     // Notifications are best-effort; never crash the upload.
   }
@@ -75,12 +77,12 @@ export function showError(err) {
 }
 
 /**
- * Close the notifier's input so it can show the final balloon and exit on its
- * own. Resolves once the message has been flushed to the notifier process.
+ * Resolve once every notification process has finished (about 6 seconds after
+ * the last one was shown), or after `timeoutMs` at the latest.
  */
-export function finishNotifications() {
-  return new Promise((resolve) => {
-    if (!notifier?.stdin?.writable) return resolve();
-    notifier.stdin.end(resolve);
-  });
+export function waitForNotifications(timeoutMs = 15000) {
+  return Promise.race([
+    Promise.all(pending),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs).unref()),
+  ]);
 }

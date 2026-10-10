@@ -6,6 +6,11 @@
     "magicode-uploader": "src/main.js"
   },
   "scripts": {
+    "test": "node --test --test-concurrency=1 \"test/unit/*.test.js\" \"test/e2e/*.test.js\"",
+    "test:unit": "node --test --test-concurrency=1 \"test/unit/*.test.js\"",
+    "test:e2e": "node --test --test-concurrency=1 \"test/e2e/*.test.js\"",
+    "test:live": "node --test \"test/e2e/live.e2e.test.js\"",
+    "test:shell": "node --test --test-concurrency=1 \"test/e2e/shell.e2e.test.js\"",
     "build:dll": "scripts\\build-dll.bat",
     "pack": "node scripts/pack.js",
     "install:app": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1",

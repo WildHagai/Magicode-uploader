@@ -8,8 +8,13 @@ function ps(command, input) {
 }
 
 export function readClipboard() {
+  // Get-Clipboard returns nothing when another process (e.g. Windows clipboard
+  // history reacting to the copy) has the clipboard open, so retry an empty read.
   // Base64 round-trip so non-ASCII text survives the console code page.
-  const b64 = ps('$t = Get-Clipboard -Raw; if ($t) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($t)) }').trim();
+  const b64 = ps(
+    'for ($i = 0; $i -lt 10; $i++) { $t = Get-Clipboard -Raw; if ($t) { break }; Start-Sleep -Milliseconds 200 }; ' +
+    'if ($t) { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($t)) }',
+  ).trim();
   return b64 ? Buffer.from(b64, 'base64').toString('utf-8') : '';
 }
 

@@ -1,6 +1,10 @@
 # Magicode Uploader
 
-Upload files to [send.magicode.me](https://send.magicode.me) directly from the Windows Explorer context menu.
+Upload files to [send.magicode.me](https://send.magicode.me) directly from the Windows Explorer context menu — right-click, and the download link is on your clipboard.
+
+![Right-click a file, choose "Upload to Magicode", and the link is copied to the clipboard](docs/demo.gif)
+
+> **Unofficial.** This is an independent open-source tool for send.magicode.me. It is not made or endorsed by Magicode.
 
 **[עברית למטה](#magicode-uploader---עברית)**
 
@@ -10,10 +14,11 @@ Upload files to [send.magicode.me](https://send.magicode.me) directly from the W
 
 - **Windows Explorer integration** — Right-click any file or folder and select "Upload to Magicode"
 - **Windows 11 modern context menu** — Appears in the top-level menu (not buried under "Show more options")
-- **Classic context menu** — Also works in the classic menu for full compatibility
-- **Multiple file support** — Select multiple files and they'll be zipped into a single archive before uploading
+- **Works on Windows 10 too** — Falls back to the classic context menu where the Windows 11 menu isn't available
+- **Files, folders and multiple selections** — Folders and multi-selections are zipped into a single archive before uploading
 - **Clipboard integration** — The download URL is automatically copied to your clipboard
-- **Toast notifications** — Get notified when the upload starts and completes
+- **Notifications** — Shows the link when the upload completes (and progress for slow uploads)
+- **Reliable uploads** — Large files are sent in chunks, and a dropped chunk is retried
 - **No console window** — Runs silently in the background
 
 ## Installation
@@ -23,7 +28,13 @@ Upload files to [send.magicode.me](https://send.magicode.me) directly from the W
 1. Download `MagicodeUploader-Setup.exe` from the [latest release](../../releases/latest)
 2. Run the installer
 
-The installer will automatically set up the context menu, enable Developer Mode for Win11 support (a UAC prompt will appear), and register all necessary components.
+The installer sets up the context menu and registers all necessary components.
+
+#### Why does the installer ask for administrator permission?
+
+To appear in the **Windows 11 top-level menu**, a context-menu command has to be part of an app package. Windows only accepts an unsigned app package like this one when **Developer Mode** is turned on, so the installer turns it on (that is the UAC prompt). Developer Mode is a standard Windows setting (*Settings > System > For developers*) — it lets you install apps that aren't from the Microsoft Store.
+
+If you decline the prompt, everything still works: "Upload to Magicode" just appears under **Show more options** instead of the top-level menu.
 
 ### Prerequisites
 
@@ -73,6 +84,16 @@ npm run pack
 
 The GitHub Action handles all of this automatically when a version tag is pushed.
 
+### Tests
+
+```bash
+npm test            # (Node 21+) unit tests + end-to-end CLI tests against a local mock server
+npm run test:live   # also upload to the real send.magicode.me and download it back
+npm run test:shell  # drive the installed context menu through the Windows shell
+```
+
+`npm test` needs no network and runs in CI on every push. The end-to-end tests run the real CLI as a separate process with real zipping, real notification processes (logging to a file instead of showing a balloon) and the real clipboard, which they restore afterwards. `test:live` and `test:shell` upload small random test files to send.magicode.me.
+
 ## How It Works
 
 | Component | Purpose |
@@ -104,16 +125,19 @@ The action builds the native DLL, creates the installer with Inno Setup, and pub
 
 ## Magicode Uploader - עברית
 
-העלאת קבצים ל-[send.magicode.me](https://send.magicode.me) ישירות מתפריט הלחיצה הימנית בסייר הקבצים של Windows.
+העלאת קבצים ל-[send.magicode.me](https://send.magicode.me) ישירות מתפריט הלחיצה הימנית בסייר הקבצים של Windows — לחיצה ימנית, וקישור ההורדה כבר בלוח.
+
+> **לא רשמי.** זהו כלי קוד פתוח עצמאי עבור send.magicode.me, ואינו מטעם Magicode.
 
 ### תכונות
 
 - **שילוב בסייר הקבצים** — לחיצה ימנית על כל קובץ או תיקייה ובחירה ב-"Upload to Magicode"
 - **תפריט מודרני של Windows 11** — מופיע בתפריט הראשי (לא מוסתר תחת "הצג אפשרויות נוספות")
-- **תפריט קלאסי** — עובד גם בתפריט הקלאסי לתאימות מלאה
-- **תמיכה בקבצים מרובים** — בחירת מספר קבצים תאחד אותם לארכיון ZIP לפני ההעלאה
+- **עובד גם ב-Windows 10** — במקום שהתפריט של Windows 11 לא זמין, הפקודה מופיעה בתפריט הקלאסי
+- **קבצים, תיקיות ובחירה מרובה** — תיקיות ובחירה של כמה פריטים מאוחדות לארכיון ZIP אחד לפני ההעלאה
 - **העתקה ללוח** — קישור ההורדה מועתק אוטומטית ללוח
-- **התראות** — הודעה כשההעלאה מתחילה ומסתיימת
+- **התראות** — הקישור מוצג בסיום ההעלאה (ובהעלאות ארוכות גם הודעת התקדמות)
+- **העלאה אמינה** — קבצים גדולים נשלחים בחלקים, וחלק שנכשל נשלח שוב
 - **ללא חלון קונסול** — רץ ברקע בשקט
 
 ### התקנה
@@ -123,7 +147,13 @@ The action builds the native DLL, creates the installer with Inno Setup, and pub
 1. הורידו את `MagicodeUploader-Setup.exe` מ[הגרסה האחרונה](../../releases/latest)
 2. הריצו את קובץ ההתקנה
 
-ההתקנה תגדיר אוטומטית את תפריט הלחיצה הימנית, תפעיל מצב מפתח לתמיכה ב-Windows 11 (תופיע בקשת UAC), ותרשום את כל הרכיבים הנדרשים.
+ההתקנה תגדיר אוטומטית את תפריט הלחיצה הימנית ותרשום את כל הרכיבים הנדרשים.
+
+#### למה ההתקנה מבקשת הרשאת מנהל?
+
+כדי שהפקודה תופיע **בתפריט הראשי של Windows 11**, היא צריכה להיות חלק מחבילת אפליקציה. Windows מקבל חבילה לא חתומה כמו זו רק כש**מצב מפתח** (Developer Mode) מופעל, ולכן ההתקנה מפעילה אותו (זו בקשת ה-UAC). מצב מפתח הוא הגדרה רגילה של Windows (*הגדרות > מערכת > למפתחים*) שמאפשרת להתקין אפליקציות שלא מה-Microsoft Store.
+
+אם תסרבו לבקשה, הכול עדיין עובד: "Upload to Magicode" פשוט יופיע תחת **הצג אפשרויות נוספות** במקום בתפריט הראשי.
 
 #### דרישות מקדימות
 

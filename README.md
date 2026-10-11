@@ -17,8 +17,11 @@ Upload files to [send.magicode.me](https://send.magicode.me) directly from the W
 - **Works on Windows 10 too** — Falls back to the classic context menu where the Windows 11 menu isn't available
 - **Files, folders and multiple selections** — Folders and multi-selections are zipped into a single archive before uploading
 - **Clipboard integration** — The download URL is automatically copied to your clipboard
-- **Notifications** — Shows the link when the upload completes (and progress for slow uploads)
-- **Reliable uploads** — Large files are sent in chunks, and a dropped chunk is retried
+- **Notifications** — Shows the link when the upload completes (and progress for slow uploads); click it to open the link
+- **Reliable uploads** — Large files are sent in chunks; if the connection drops, the upload waits up to about 3 minutes and continues where it stopped, and the PC doesn't go to sleep mid-upload
+- **Recent links** — Right-click the background of any folder for **Magicode: recent links**, the last 10 uploads; pick one to copy its link again
+- **Clear errors** — "No internet connection", "the file is over send.magicode.me's 10 GB limit" and so on, instead of error codes
+- **Hebrew** — Menus and notifications are in Hebrew when Windows is
 - **No console window** — Runs silently in the background
 - **Nothing else to install** — A small Windows app; no Node.js or other runtime needed
 
@@ -55,6 +58,10 @@ The file will be uploaded to [send.magicode.me](https://send.magicode.me), the d
 
 For multiple files, select them all, right-click, and choose "Upload to Magicode" — they'll be zipped together automatically.
 
+Lost a link? Right-click an empty spot in any folder and open **Magicode: recent links**.
+
+send.magicode.me accepts files up to 10 GB.
+
 ### Command Line
 
 You can also use it from the command line:
@@ -67,7 +74,7 @@ It prints the link, copies it to the clipboard and shows the notification.
 
 ## Privacy
 
-Magicode Uploader sends a file to [send.magicode.me](https://send.magicode.me) only when you ask it to, by choosing "Upload to Magicode" or running it on that file. It does not transfer any other information to other networked systems: no telemetry, no analytics, no update checks. Links to your uploads are kept only in `upload.log` in the install folder, on your computer.
+Magicode Uploader sends a file to [send.magicode.me](https://send.magicode.me) only when you ask it to, by choosing "Upload to Magicode" or running it on that file. It does not transfer any other information to other networked systems: no telemetry, no analytics, no update checks. Links to your uploads are kept only on your computer, in `upload.log` and `recent.txt` in the install folder.
 
 ## Code signing policy
 
@@ -102,7 +109,8 @@ To build the installer, run `ISCC scripts\installer.iss`. GitHub Actions builds 
 ### Tests
 
 ```bash
-npm test            # C# unit tests (xUnit) + end-to-end tests of the exe against a local mock server
+npm test            # C# unit tests (xUnit), including the context-menu DLL when it is built,
+                    # + end-to-end tests of the exe against a local mock server
 npm run test:live   # also upload to the real send.magicode.me and download it back
 npm run test:shell  # drive the installed context menu through the Windows shell
 ```
@@ -157,8 +165,11 @@ The action runs the tests, builds the uploader and the DLL, creates the installe
 - **עובד גם ב-Windows 10** — במקום שהתפריט של Windows 11 לא זמין, הפקודה מופיעה בתפריט הקלאסי
 - **קבצים, תיקיות ובחירה מרובה** — תיקיות ובחירה של כמה פריטים מאוחדות לארכיון ZIP אחד לפני ההעלאה
 - **העתקה ללוח** — קישור ההורדה מועתק אוטומטית ללוח
-- **התראות** — הקישור מוצג בסיום ההעלאה (ובהעלאות ארוכות גם הודעת התקדמות)
-- **העלאה אמינה** — קבצים גדולים נשלחים בחלקים, וחלק שנכשל נשלח שוב
+- **התראות** — הקישור מוצג בסיום ההעלאה (ובהעלאות ארוכות גם הודעת התקדמות); לחיצה על ההתראה פותחת את הקישור
+- **העלאה אמינה** — קבצים גדולים נשלחים בחלקים; אם החיבור נופל, ההעלאה ממתינה עד כ-3 דקות וממשיכה מאיפה שעצרה, והמחשב לא נכנס למצב שינה באמצע
+- **קישורים אחרונים** — לחיצה ימנית על רקע של תיקייה ← **Magicode: קישורים אחרונים**, 10 ההעלאות האחרונות; בחירה באחת מעתיקה שוב את הקישור שלה
+- **הודעות שגיאה ברורות** — "אין חיבור לאינטרנט", "הקובץ גדול ממגבלת 10 GB של send.magicode.me" וכדומה, במקום קודי שגיאה
+- **עברית** — התפריטים וההתראות בעברית כש-Windows בעברית
 - **ללא חלון קונסול** — רץ ברקע בשקט
 - **אין צורך להתקין שום דבר נוסף** — אפליקציית Windows קטנה, בלי Node.js או סביבת הרצה אחרת
 
@@ -198,5 +209,9 @@ Magicode Uploader שולח קובץ ל-send.magicode.me רק כשאתם מבקש
 הקובץ יועלה ל-[send.magicode.me](https://send.magicode.me), קישור ההורדה יועתק ללוח, ותקבלו התראה כשההעלאה תסתיים.
 
 לקבצים מרובים — בחרו את כולם, לחצו לחיצה ימנית ובחרו "Upload to Magicode" — הם יאוחדו לקובץ ZIP אוטומטית.
+
+איבדתם קישור? לחצו לחיצה ימנית על מקום ריק בתיקייה כלשהי ובחרו **Magicode: קישורים אחרונים**.
+
+send.magicode.me מקבל קבצים עד 10 GB.
 
 </div>

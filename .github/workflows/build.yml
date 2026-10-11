@@ -65,7 +65,7 @@ jobs:
         run: |
           if not exist "src\win11\build" mkdir "src\win11\build"
           rc.exe /nologo /fo src\win11\build\MagicodeNative.res src\win11\MagicodeNative.rc || exit /b 1
-          cl.exe /nologo /O2 /W3 /EHsc /std:c++17 /LD src\win11\MagicodeContextMenu.cpp /Fo"src\win11\build\MagicodeNative.obj" /Fe"src\win11\build\MagicodeNative.dll" /link /DEF:src\win11\MagicodeContextMenu.def src\win11\build\MagicodeNative.res shlwapi.lib shell32.lib ole32.lib advapi32.lib || exit /b 1
+          cl.exe /nologo /O2 /W3 /EHsc /std:c++17 /utf-8 /LD src\win11\MagicodeContextMenu.cpp /Fo"src\win11\build\MagicodeNative.obj" /Fe"src\win11\build\MagicodeNative.dll" /link /DEF:src\win11\MagicodeContextMenu.def src\win11\build\MagicodeNative.res shlwapi.lib shell32.lib ole32.lib advapi32.lib || exit /b 1
           del /q src\win11\build\MagicodeNative.obj src\win11\build\MagicodeNative.exp src\win11\build\MagicodeNative.lib src\win11\build\MagicodeNative.res 2>nul
 
       # Builds the uploader too (npm run build).

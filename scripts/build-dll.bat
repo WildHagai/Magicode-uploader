@@ -32,7 +32,7 @@ if not exist "%OUT%" mkdir "%OUT%"
 
 echo Building MagicodeNative.dll (x64)...
 rc.exe /nologo /fo "%OUT%\MagicodeNative.res" "%SRC%\MagicodeNative.rc" || exit /b 1
-cl.exe /nologo /O2 /W3 /EHsc /std:c++17 ^
+cl.exe /nologo /O2 /W3 /EHsc /std:c++17 /utf-8 ^
   /LD "%SRC%\MagicodeContextMenu.cpp" ^
   /Fo"%OUT%\MagicodeNative.obj" ^
   /Fe"%OUT%\MagicodeNative.dll" ^

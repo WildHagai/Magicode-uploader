@@ -1,5 +1,5 @@
 #define MyAppName "Magicode Uploader"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "Magicode Uploader contributors"
 #define MyAppURL "https://send.magicode.me"
 
@@ -53,6 +53,8 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Fil
 
 [UninstallDelete]
 Type: files; Name: "{app}\upload.log"
+Type: files; Name: "{app}\recent.txt"
+Type: files; Name: "{app}\recent.txt.tmp"
 
 [Code]
 var

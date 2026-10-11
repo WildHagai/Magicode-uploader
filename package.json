@@ -1,6 +1,6 @@
 {
   "name": "magicode-uploader",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Development scripts and end-to-end tests for Magicode Uploader (the app itself is C#, see src/MagicodeUploader)",
   "type": "module",

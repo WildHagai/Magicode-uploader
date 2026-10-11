@@ -25,22 +25,41 @@ $verbKeys = @(
 )
 $clsidKey = "HKCU:\Software\Classes\CLSID\$clsid"
 
+# "Magicode: recent links" submenu on folder and desktop backgrounds
+$recentClsid = '{7B3F2E41-1D5A-4F6E-9C8B-2A3D4E5F6072}'
+$recentVerbKeys = @(
+    'HKCU:\Software\Classes\Directory\Background\shell\MagicodeRecent',
+    'HKCU:\Software\Classes\DesktopBackground\shell\MagicodeRecent'
+)
+$recentClsidKey = "HKCU:\Software\Classes\CLSID\$recentClsid"
+
 function Remove-ClassicMenu {
-    foreach ($k in $verbKeys + $clsidKey) {
+    foreach ($k in $verbKeys + $clsidKey + $recentVerbKeys + $recentClsidKey) {
         if (Test-Path -LiteralPath $k) { Remove-Item -LiteralPath $k -Recurse -Force }
     }
 }
 
+function Register-Class($key, $name) {
+    New-Item -Path "$key\InprocServer32" -Force | Out-Null
+    Set-ItemProperty -LiteralPath $key -Name '(Default)' -Value $name
+    Set-ItemProperty -LiteralPath "$key\InprocServer32" -Name '(Default)' -Value $dllPath
+    Set-ItemProperty -LiteralPath "$key\InprocServer32" -Name 'ThreadingModel' -Value 'Apartment'
+}
+
 function Register-ClassicMenu {
     Remove-ClassicMenu
-    New-Item -Path "$clsidKey\InprocServer32" -Force | Out-Null
-    Set-ItemProperty -LiteralPath $clsidKey -Name '(Default)' -Value 'Magicode Upload Handler'
-    Set-ItemProperty -LiteralPath "$clsidKey\InprocServer32" -Name '(Default)' -Value $dllPath
-    Set-ItemProperty -LiteralPath "$clsidKey\InprocServer32" -Name 'ThreadingModel' -Value 'Apartment'
+    Register-Class $clsidKey 'Magicode Upload Handler'
+    Register-Class $recentClsidKey 'Magicode Recent Links'
     foreach ($k in $verbKeys) {
         New-Item -Path $k -Force | Out-Null
         Set-ItemProperty -LiteralPath $k -Name 'ExplorerCommandHandler' -Value $clsid
         Set-ItemProperty -LiteralPath $k -Name 'MultiSelectModel' -Value 'Player'
+    }
+    foreach ($k in $recentVerbKeys) {
+        New-Item -Path $k -Force | Out-Null
+        Set-ItemProperty -LiteralPath $k -Name 'ExplorerCommandHandler' -Value $recentClsid
+        # An empty SubCommands value makes the classic menu show it as a submenu.
+        Set-ItemProperty -LiteralPath $k -Name 'SubCommands' -Value ''
     }
 }
 

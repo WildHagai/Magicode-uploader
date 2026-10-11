@@ -25,8 +25,11 @@ Get-Process dllhost -ErrorAction SilentlyContinue |
     Where-Object { try { $_.Modules.ModuleName -contains 'MagicodeNative.dll' } catch { $false } } |
     Stop-Process -Force -ErrorAction SilentlyContinue
 
+$history = $null
 if (Test-Path $InstallDir) {
     Write-Host "Removing previous installation..."
+    # Keep the recent-links history across reinstalls.
+    if (Test-Path "$InstallDir\recent.txt") { $history = [IO.File]::ReadAllBytes("$InstallDir\recent.txt") }
     Remove-Item $InstallDir -Recurse -Force
 }
 
@@ -41,6 +44,7 @@ Copy-Item "$SourceRoot\AppxManifest.xml" "$InstallDir\"
 Copy-Item "$SourceRoot\Assets\*" "$InstallDir\Assets\"
 Copy-Item "$SourceRoot\scripts\register-win11.ps1" "$InstallDir\scripts\"
 Copy-Item "$SourceRoot\scripts\uninstall.ps1" "$InstallDir\uninstall.ps1"
+if ($history) { [IO.File]::WriteAllBytes("$InstallDir\recent.txt", $history) }
 
 # --- Context menu ---
 & "$InstallDir\scripts\register-win11.ps1" -AppDir $InstallDir

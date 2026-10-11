@@ -12,7 +12,7 @@
   <Identity
     Name="MagicodeUploader"
     Publisher="CN=MagicodeUploader"
-    Version="1.3.0.0"
+    Version="1.4.0.0"
     ProcessorArchitecture="neutral" />
 
   <Properties>
@@ -54,6 +54,7 @@
           <com:ComServer>
             <com:SurrogateServer DisplayName="Magicode Upload Handler">
               <com:Class Id="7B3F2E41-1D5A-4F6E-9C8B-2A3D4E5F6071" Path="MagicodeNative.dll" ThreadingModel="Both" />
+              <com:Class Id="7B3F2E41-1D5A-4F6E-9C8B-2A3D4E5F6072" Path="MagicodeNative.dll" ThreadingModel="Both" />
             </com:SurrogateServer>
           </com:ComServer>
         </com:Extension>
@@ -66,6 +67,10 @@
             </desktop5:ItemType>
             <desktop5:ItemType Type="Directory">
               <desktop5:Verb Id="MagicodeUploadDir" Clsid="7B3F2E41-1D5A-4F6E-9C8B-2A3D4E5F6071" />
+            </desktop5:ItemType>
+            <!-- "Magicode: recent links" on the background of a folder -->
+            <desktop5:ItemType Type="Directory\Background">
+              <desktop5:Verb Id="MagicodeRecent" Clsid="7B3F2E41-1D5A-4F6E-9C8B-2A3D4E5F6072" />
             </desktop5:ItemType>
           </desktop4:FileExplorerContextMenus>
         </desktop4:Extension>

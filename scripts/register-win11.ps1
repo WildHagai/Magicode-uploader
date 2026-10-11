@@ -2,7 +2,8 @@
 #
 # Preferred: the sparse MSIX package, which puts the command in the Windows 11
 # context menu (and in "Show more options"). Registering an unsigned sparse
-# package needs Developer Mode, which is enabled here if needed (UAC prompt).
+# package needs Developer Mode, which is enabled here if needed (UAC prompt)
+# unless -NoDeveloperMode is given (the installer asks the user first).
 #
 # Fallback (Windows 10, or Developer Mode declined): a classic HKCU verb that
 # loads the same IExplorerCommand DLL, so it still gets the whole selection in
@@ -10,7 +11,8 @@
 # command never appears twice.
 param(
     [Parameter(Mandatory=$true)]
-    [string]$AppDir
+    [string]$AppDir,
+    [switch]$NoDeveloperMode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -54,7 +56,7 @@ Get-AppxPackage MagicodeUploader -ErrorAction SilentlyContinue | Remove-AppxPack
 
 $packaged = $false
 if ($isWin11) {
-    if (-not (Test-DeveloperMode)) {
+    if (-not (Test-DeveloperMode) -and -not $NoDeveloperMode) {
         $enableScript = @"
 New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -Force | Out-Null
 Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -Name 'AllowDevelopmentWithoutDevLicense' -Value 1 -Type DWord -Force

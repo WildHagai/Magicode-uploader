@@ -1,6 +1,6 @@
 #define MyAppName "Magicode Uploader"
 #define MyAppVersion "1.3.0"
-#define MyAppPublisher "Magicode"
+#define MyAppPublisher "Magicode Uploader contributors"
 #define MyAppURL "https://send.magicode.me"
 
 [Setup]
@@ -45,7 +45,7 @@ Source: "uninstall.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 [Run]
 ; Register the context menu: sparse package on Win11 (enables Developer Mode if needed), classic verb otherwise
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\register-win11.ps1"" -AppDir ""{app}"""; Flags: runhidden shellexec waituntilterminated
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\register-win11.ps1"" -AppDir ""{app}"" {code:DeveloperModeArg}"; Flags: runhidden shellexec waituntilterminated
 
 [UninstallRun]
 ; Remove the sparse package and any classic context menu keys
@@ -55,6 +55,47 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Fil
 Type: files; Name: "{app}\upload.log"
 
 [Code]
+var
+  DeveloperModePage: TInputOptionWizardPage;
+
+// The Windows 11 top-level menu needs Developer Mode for this (unsigned) app package.
+function NeedsDeveloperMode(): Boolean;
+var
+  Version: TWindowsVersion;
+  Enabled: Cardinal;
+begin
+  GetWindowsVersionEx(Version);
+  Result := (Version.Build >= 22000) and not
+    (RegQueryDWordValue(HKLM64, 'SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock', 'AllowDevelopmentWithoutDevLicense', Enabled) and (Enabled = 1));
+end;
+
+// Ask before changing a system setting, instead of just showing a UAC prompt.
+procedure InitializeWizard();
+begin
+  DeveloperModePage := CreateInputOptionPage(wpWelcome,
+    'Windows 11 context menu', 'Where should "Upload to Magicode" appear?',
+    'To appear in the main Windows 11 right-click menu, this app needs Windows Developer Mode, ' +
+    'a standard Windows setting (Settings > System > For developers) that allows installing apps from outside the Microsoft Store. ' +
+    'Turning it on asks for administrator permission.' #13#10#13#10 +
+    'Without it, "Upload to Magicode" appears under "Show more options" instead, and works the same.',
+    False, False);
+  DeveloperModePage.Add('Turn on Developer Mode and show it in the main menu');
+  DeveloperModePage.Values[0] := True;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = DeveloperModePage.ID) and not NeedsDeveloperMode();
+end;
+
+function DeveloperModeArg(Param: String): String;
+begin
+  if NeedsDeveloperMode() and not DeveloperModePage.Values[0] then
+    Result := '-NoDeveloperMode'
+  else
+    Result := '';
+end;
+
 // The installed DLL stays loaded by the package's COM surrogate (or Explorer),
 // so release it before files are replaced on upgrade.
 function PrepareToInstall(var NeedsRestart: Boolean): String;

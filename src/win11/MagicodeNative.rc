@@ -1,0 +1,31 @@
+// Version information (the release workflow stamps the version from the git tag).
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,3,0,0
+ PRODUCTVERSION 1,3,0,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+ FILEFLAGS 0
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Magicode Uploader contributors"
+            VALUE "FileDescription", "Magicode Uploader context menu handler"
+            VALUE "FileVersion", "1.3.0"
+            VALUE "InternalName", "MagicodeNative"
+            VALUE "LegalCopyright", "Magicode Uploader contributors"
+            VALUE "OriginalFilename", "MagicodeNative.dll"
+            VALUE "ProductName", "Magicode Uploader"
+            VALUE "ProductVersion", "1.3.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

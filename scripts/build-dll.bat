@@ -31,11 +31,12 @@ set "OUT=%SRC%\build"
 if not exist "%OUT%" mkdir "%OUT%"
 
 echo Building MagicodeNative.dll (x64)...
+rc.exe /nologo /fo "%OUT%\MagicodeNative.res" "%SRC%\MagicodeNative.rc" || exit /b 1
 cl.exe /nologo /O2 /W3 /EHsc /std:c++17 ^
   /LD "%SRC%\MagicodeContextMenu.cpp" ^
   /Fo"%OUT%\MagicodeNative.obj" ^
   /Fe"%OUT%\MagicodeNative.dll" ^
-  /link /DEF:"%SRC%\MagicodeContextMenu.def" ^
+  /link /DEF:"%SRC%\MagicodeContextMenu.def" "%OUT%\MagicodeNative.res" ^
   shlwapi.lib shell32.lib ole32.lib advapi32.lib
 
 if %errorlevel% neq 0 (
@@ -47,5 +48,6 @@ if %errorlevel% neq 0 (
 del /q "%OUT%\MagicodeNative.obj" 2>nul
 del /q "%OUT%\MagicodeNative.exp" 2>nul
 del /q "%OUT%\MagicodeNative.lib" 2>nul
+del /q "%OUT%\MagicodeNative.res" 2>nul
 
 echo Build succeeded: %OUT%\MagicodeNative.dll

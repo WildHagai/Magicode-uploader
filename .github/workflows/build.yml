@@ -66,6 +66,9 @@ jobs:
           Set-Content scripts\installer.iss ($iss -replace '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$v`"")
           $m = Get-Content AppxManifest.xml -Raw
           Set-Content AppxManifest.xml ($m -replace '(<Identity[^>]*Version=")[^"]*', "`${1}$v.0")
+          $rc = Get-Content src\win11\MagicodeNative.rc -Raw
+          $rc = $rc -replace '(FILE|PRODUCT)VERSION \d+,\d+,\d+,\d+', "`${1}VERSION $($v -replace '\.', ','),0"
+          Set-Content src\win11\MagicodeNative.rc ($rc -replace '"(File|Product)Version", "[^"]*"', "`"`${1}Version`", `"$v`"")
 
       - name: Build the uploader
         run: dotnet build src/MagicodeUploader -c Release --nologo -p:Version=${{ steps.version.outputs.VERSION }}
@@ -74,8 +77,9 @@ jobs:
         shell: cmd
         run: |
           if not exist "src\win11\build" mkdir "src\win11\build"
-          cl.exe /nologo /O2 /W3 /EHsc /std:c++17 /LD src\win11\MagicodeContextMenu.cpp /Fo"src\win11\build\MagicodeNative.obj" /Fe"src\win11\build\MagicodeNative.dll" /link /DEF:src\win11\MagicodeContextMenu.def shlwapi.lib shell32.lib ole32.lib advapi32.lib
-          del /q src\win11\build\MagicodeNative.obj src\win11\build\MagicodeNative.exp src\win11\build\MagicodeNative.lib 2>nul
+          rc.exe /nologo /fo src\win11\build\MagicodeNative.res src\win11\MagicodeNative.rc || exit /b 1
+          cl.exe /nologo /O2 /W3 /EHsc /std:c++17 /LD src\win11\MagicodeContextMenu.cpp /Fo"src\win11\build\MagicodeNative.obj" /Fe"src\win11\build\MagicodeNative.dll" /link /DEF:src\win11\MagicodeContextMenu.def src\win11\build\MagicodeNative.res shlwapi.lib shell32.lib ole32.lib advapi32.lib || exit /b 1
+          del /q src\win11\build\MagicodeNative.obj src\win11\build\MagicodeNative.exp src\win11\build\MagicodeNative.lib src\win11\build\MagicodeNative.res 2>nul
 
       - name: Build the installer
         shell: cmd

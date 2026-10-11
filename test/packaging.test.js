@@ -60,4 +60,7 @@ test('version numbers agree', () => {
   assert.match(read('src/MagicodeUploader/MagicodeUploader.csproj'), new RegExp(`<Version>${version}</Version>`));
   assert.match(read('scripts/installer.iss'), new RegExp(`#define MyAppVersion "${version}"`));
   assert.match(manifest, new RegExp(`Version="${version}\\.0"`));
+  const rc = read('src/win11/MagicodeNative.rc');
+  assert.match(rc, new RegExp(`FILEVERSION ${version.replace(/\./g, ',')},0`));
+  assert.match(rc, new RegExp(`"ProductVersion", "${version}"`));
 });

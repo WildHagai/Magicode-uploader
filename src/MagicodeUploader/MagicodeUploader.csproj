@@ -11,6 +11,8 @@
     <RootNamespace>MagicodeUploader</RootNamespace>
     <Version>1.3.0</Version>
     <Product>Magicode Uploader</Product>
+    <Company>Magicode Uploader contributors</Company>
+    <Copyright>Magicode Uploader contributors</Copyright>
     <Description>Upload files to send.magicode.me from the Explorer context menu</Description>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>

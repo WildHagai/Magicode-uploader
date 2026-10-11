@@ -51,7 +51,7 @@ $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Magic
 New-Item -Path $uninstallKey -Force | Out-Null
 Set-ItemProperty -Path $uninstallKey -Name 'DisplayName' -Value 'Magicode Uploader'
 Set-ItemProperty -Path $uninstallKey -Name 'DisplayVersion' -Value $version
-Set-ItemProperty -Path $uninstallKey -Name 'Publisher' -Value 'Magicode'
+Set-ItemProperty -Path $uninstallKey -Name 'Publisher' -Value 'Magicode Uploader contributors'
 Set-ItemProperty -Path $uninstallKey -Name 'InstallLocation' -Value $InstallDir
 Set-ItemProperty -Path $uninstallKey -Name 'UninstallString' -Value "powershell -ExecutionPolicy Bypass -File `"$InstallDir\uninstall.ps1`""
 Set-ItemProperty -Path $uninstallKey -Name 'QuietUninstallString' -Value "powershell -ExecutionPolicy Bypass -File `"$InstallDir\uninstall.ps1`" -Quiet"

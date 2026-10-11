@@ -51,6 +51,9 @@ function runCli(args, extraEnv = {}) {
         MAGICODE_NOTIFY_LOG: notifyLog,
         MAGICODE_LOG_PATH: appLog,
         MAGICODE_RETRY_DELAY_MS: '5',
+        // "Uploading..." only after a minute, so even a slow (cold) CI machine
+        // counts every upload as fast; the slow-upload test sets it to 0.
+        MAGICODE_UPLOADING_DELAY_MS: '60000',
         ...extraEnv,
       },
       encoding: 'utf-8',

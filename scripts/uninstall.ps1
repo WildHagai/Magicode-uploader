@@ -27,7 +27,7 @@ if (-not $KeepFiles) {
 
     # --- Remove install directory ---
     $installDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-    if (Test-Path "$installDir\src\main.js") {
+    if (Test-Path "$installDir\MagicodeUploader.exe") {
         Remove-Item $installDir -Recurse -Force
     }
 }

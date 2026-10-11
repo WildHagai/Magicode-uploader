@@ -20,6 +20,7 @@ Upload files to [send.magicode.me](https://send.magicode.me) directly from the W
 - **Notifications** — Shows the link when the upload completes (and progress for slow uploads)
 - **Reliable uploads** — Large files are sent in chunks, and a dropped chunk is retried
 - **No console window** — Runs silently in the background
+- **Nothing else to install** — A small Windows app; no Node.js or other runtime needed
 
 ## Installation
 
@@ -36,10 +37,11 @@ To appear in the **Windows 11 top-level menu**, a context-menu command has to be
 
 If you decline the prompt, everything still works: "Upload to Magicode" just appears under **Show more options** instead of the top-level menu.
 
-### Prerequisites
+### Requirements
 
-- **Node.js** (v18+) — [nodejs.org](https://nodejs.org)
-- **Windows 10/11** (x64)
+- **Windows 11, or Windows 10** version 1903 or later (x64)
+
+That's all: the app uses .NET Framework 4.8, which is part of Windows.
 
 ### Uninstall
 
@@ -57,50 +59,47 @@ For multiple files, select them all, right-click, and choose "Upload to Magicode
 
 You can also use it from the command line:
 
-```bash
-node src/main.js <file1> [file2] [file3] ...
+```cmd
+"%LOCALAPPDATA%\Programs\MagicodeUploader\MagicodeUploader.exe" <file1> [file2] [file3] ...
 ```
+
+It prints the link, copies it to the clipboard and shows the notification.
 
 ## Building from Source
 
 ### Prerequisites
 
-- **Node.js 22** (21+ is needed for `npm test`; CI builds and tests with 22). Running the app only needs 18+.
-- Visual Studio 2022 (with C++ desktop workload)
-- Windows SDK
-- [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+- [.NET SDK](https://dotnet.microsoft.com/download) (8 or later) — builds the uploader, which targets .NET Framework 4.8
+- Visual Studio 2022 with the **Desktop development with C++** workload and a Windows SDK — builds the context-menu DLL
+- [Inno Setup 6](https://jrsoftware.org/isinfo.php) — builds the installer
+- **Node.js 22** — only for running the tests
 
-### Build the native DLL
-
-```bash
-npm run build:dll
-```
-
-### Build the installer
+### Build and install locally
 
 ```bash
-npm install
-npm run pack
+npm run build        # src/MagicodeUploader -> MagicodeUploader.exe
+npm run build:dll    # src/win11 -> MagicodeNative.dll
+npm run install:app  # installs both and registers the context menu
 ```
 
-The GitHub Action handles all of this automatically when a version tag is pushed.
+To build the installer, run `ISCC scripts\installer.iss`. GitHub Actions builds and tests the installer on every push (download it from the run's artifacts) and publishes it when a version tag is pushed.
 
 ### Tests
 
 ```bash
-npm test            # unit tests + end-to-end CLI tests against a local mock server
+npm test            # C# unit tests (xUnit) + end-to-end tests of the exe against a local mock server
 npm run test:live   # also upload to the real send.magicode.me and download it back
 npm run test:shell  # drive the installed context menu through the Windows shell
 ```
 
-`npm test` needs no network and runs in CI on every push. The end-to-end tests run the real CLI as a separate process with real zipping, real notification processes (logging to a file instead of showing a balloon) and the real clipboard, which they restore afterwards. `test:live` and `test:shell` upload small random test files to send.magicode.me.
+`npm test` needs no network and runs in CI on every push. The end-to-end tests run the built `MagicodeUploader.exe` as a separate process against a local stand-in for send.magicode.me, with real zipping and the real clipboard (restored afterwards); notifications are written to a file instead of the tray. `test:live` and `test:shell` upload small random test files to send.magicode.me.
 
 ## How It Works
 
 | Component | Purpose |
 |---|---|
-| `src/main.js` | Uploads files, copies URL to clipboard, shows notifications |
-| `src/win11/MagicodeNative.dll` | Native C++ IExplorerCommand handler that launches node.exe without a console window |
+| `src/MagicodeUploader` | The uploader (C#, .NET Framework 4.8): zips, uploads in chunks, copies the link, shows notifications |
+| `src/win11` | `MagicodeNative.dll`, the native C++ `IExplorerCommand` handler that launches the uploader without a console window |
 | `AppxManifest.xml` | Sparse MSIX package for Win11 context menu identity |
 | `scripts/register-win11.ps1` | Registers the sparse package, or the classic fallback verb |
 | `scripts/installer.iss` | Inno Setup script that builds the single-file installer |
@@ -109,16 +108,18 @@ The Win11 modern context menu requires a native COM DLL implementing `IExplorerC
 
 Folders are zipped before uploading. Errors and uploaded links are logged to `upload.log` in the install folder.
 
+Before version 1.3 the uploader was written in JavaScript and needed Node.js installed; installing 1.3 over an older version removes the old files.
+
 ## Releasing
 
 Push a version tag to trigger the GitHub Action:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.3.0
+git push origin v1.3.0
 ```
 
-The action builds the native DLL, creates the installer with Inno Setup, and publishes `MagicodeUploader-Setup.exe` to GitHub Releases.
+The action runs the tests, builds the uploader and the DLL, creates the installer with Inno Setup, and publishes `MagicodeUploader-Setup.exe` to GitHub Releases.
 
 ---
 
@@ -140,6 +141,7 @@ The action builds the native DLL, creates the installer with Inno Setup, and pub
 - **התראות** — הקישור מוצג בסיום ההעלאה (ובהעלאות ארוכות גם הודעת התקדמות)
 - **העלאה אמינה** — קבצים גדולים נשלחים בחלקים, וחלק שנכשל נשלח שוב
 - **ללא חלון קונסול** — רץ ברקע בשקט
+- **אין צורך להתקין שום דבר נוסף** — אפליקציית Windows קטנה, בלי Node.js או סביבת הרצה אחרת
 
 ### התקנה
 
@@ -156,10 +158,11 @@ The action builds the native DLL, creates the installer with Inno Setup, and pub
 
 אם תסרבו לבקשה, הכול עדיין עובד: "Upload to Magicode" פשוט יופיע תחת **הצג אפשרויות נוספות** במקום בתפריט הראשי.
 
-#### דרישות מקדימות
+#### דרישות
 
-- **Node.js** (גרסה 18 ומעלה) — [nodejs.org](https://nodejs.org)
-- **Windows 10/11** (x64)
+- **Windows 11, או Windows 10** גרסה 1903 ומעלה (x64)
+
+זה הכול: האפליקציה משתמשת ב-.NET Framework 4.8, שכבר מובנה ב-Windows.
 
 ### הסרה
 

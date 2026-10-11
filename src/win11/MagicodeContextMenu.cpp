@@ -32,81 +32,9 @@ static bool FileExists(const std::wstring& path) {
     return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-// Minimal JSON string lookup: returns the unescaped value of "key": "value".
-static bool JsonString(const std::wstring& json, const wchar_t* key, std::wstring& out) {
-    std::wstring needle = std::wstring(L"\"") + key + L"\"";
-    size_t pos = json.find(needle);
-    if (pos == std::wstring::npos) return false;
-    pos = json.find(L':', pos + needle.size());
-    if (pos == std::wstring::npos) return false;
-    pos = json.find(L'"', pos + 1);
-    if (pos == std::wstring::npos) return false;
-
-    out.clear();
-    for (size_t i = pos + 1; i < json.size(); i++) {
-        wchar_t c = json[i];
-        if (c == L'"') return true;
-        if (c == L'\\' && i + 1 < json.size()) {
-            wchar_t e = json[++i];
-            switch (e) {
-            case L'n': out += L'\n'; break;
-            case L't': out += L'\t'; break;
-            case L'r': out += L'\r'; break;
-            case L'b': out += L'\b'; break;
-            case L'f': out += L'\f'; break;
-            case L'u':
-                if (i + 4 < json.size()) {
-                    out += (wchar_t)wcstoul(json.substr(i + 1, 4).c_str(), NULL, 16);
-                    i += 4;
-                }
-                break;
-            default: out += e; break; // \\ \" \/
-            }
-        } else {
-            out += c;
-        }
-    }
-    return false;
-}
-
-// Reads magicode-config.json (written by the installer next to this DLL).
-// Falls back to sensible defaults so a moved or upgraded Node.js still works.
-static bool ResolvePaths(std::wstring& nodePath, std::wstring& mainJsPath) {
-    std::wstring dir = ModuleDir();
-    nodePath.clear();
-    mainJsPath.clear();
-
-    HANDLE hFile = CreateFileW((dir + L"\\magicode-config.json").c_str(), GENERIC_READ,
-        FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-        char buf[16384];
-        DWORD bytesRead = 0;
-        ReadFile(hFile, buf, sizeof(buf) - 1, &bytesRead, NULL);
-        CloseHandle(hFile);
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, buf, (int)bytesRead, NULL, 0);
-        std::wstring json(wlen, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, buf, (int)bytesRead, &json[0], wlen);
-        JsonString(json, L"nodePath", nodePath);
-        JsonString(json, L"mainJsPath", mainJsPath);
-    }
-
-    if (mainJsPath.empty() || !FileExists(mainJsPath)) {
-        // The DLL lives in <app>\src\win11\build; main.js is <app>\src\main.js.
-        mainJsPath = dir + L"\\..\\..\\main.js";
-    }
-
-    if (nodePath.empty() || !FileExists(nodePath)) {
-        WCHAR found[MAX_PATH];
-        if (SearchPathW(NULL, L"node.exe", NULL, MAX_PATH, found, NULL)) {
-            nodePath = found;
-        } else {
-            WCHAR pf[MAX_PATH];
-            ExpandEnvironmentStringsW(L"%ProgramFiles%\\nodejs\\node.exe", pf, MAX_PATH);
-            nodePath = pf;
-        }
-    }
-
-    return FileExists(nodePath) && FileExists(mainJsPath);
+// MagicodeUploader.exe is installed next to this DLL.
+static std::wstring UploaderPath() {
+    return ModuleDir() + L"\\MagicodeUploader.exe";
 }
 
 static void ShowError(const wchar_t* message) {
@@ -132,7 +60,7 @@ static std::vector<std::wstring> SelectedPaths(IShellItemArray* items) {
     return paths;
 }
 
-// Writes the paths, one per line in UTF-8, to a temp file that main.js reads
+// Writes the paths, one per line in UTF-8, to a temp file that the uploader reads
 // (and deletes). This avoids the 32K command-line limit on big selections.
 static bool WriteListFile(const std::vector<std::wstring>& paths, std::wstring& listPath) {
     WCHAR tempDir[MAX_PATH + 1];
@@ -217,10 +145,9 @@ public:
         std::vector<std::wstring> paths = SelectedPaths(psiItemArray);
         if (paths.empty()) return E_INVALIDARG;
 
-        std::wstring nodePath, mainJsPath;
-        if (!ResolvePaths(nodePath, mainJsPath)) {
-            ShowError(L"Could not find Node.js or the Magicode Uploader scripts.\n\n"
-                      L"Make sure Node.js is installed, then reinstall Magicode Uploader.");
+        std::wstring exePath = UploaderPath();
+        if (!FileExists(exePath)) {
+            ShowError(L"MagicodeUploader.exe is missing. Please reinstall Magicode Uploader.");
             return E_FAIL;
         }
 
@@ -230,7 +157,7 @@ public:
             return E_FAIL;
         }
 
-        std::wstring cmd = L"\"" + nodePath + L"\" \"" + mainJsPath + L"\" --list \"" + listPath + L"\"";
+        std::wstring cmd = L"\"" + exePath + L"\" --list \"" + listPath + L"\"";
         std::vector<WCHAR> cmdLine(cmd.begin(), cmd.end());
         cmdLine.push_back(L'\0');
 
@@ -239,7 +166,7 @@ public:
         if (!CreateProcessW(NULL, cmdLine.data(), NULL, NULL, FALSE,
                 CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
             DeleteFileW(listPath.c_str());
-            ShowError(L"Could not start Node.js to upload the selected files.");
+            ShowError(L"Could not start MagicodeUploader.exe to upload the selected files.");
             return HRESULT_FROM_WIN32(GetLastError());
         }
         CloseHandle(pi.hProcess);
@@ -325,7 +252,7 @@ STDAPI DllCanUnloadNow() {
     return g_cRef == 0 ? S_OK : S_FALSE;
 }
 
-// Registration is done by the sparse package (Win11) or scripts\register.ps1.
+// Registration is done by the sparse package (Win11) or scripts\register-win11.ps1.
 STDAPI DllRegisterServer() { return S_OK; }
 STDAPI DllUnregisterServer() { return S_OK; }
 

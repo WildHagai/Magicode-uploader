@@ -1,5 +1,5 @@
 #define MyAppName "Magicode Uploader"
-#define MyAppVersion "1.2.1"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "Magicode"
 #define MyAppURL "https://send.magicode.me"
 
@@ -16,39 +16,34 @@ OutputBaseFilename=MagicodeUploader-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 SetupIconFile=..\Assets\app.ico
-UninstallDisplayIcon={app}\Assets\app.ico
+UninstallDisplayIcon={app}\MagicodeUploader.exe
 WizardStyle=modern
 DisableDirPage=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[InstallDelete]
+; Files of the Node.js versions (1.2.x and earlier)
+Type: filesandordirs; Name: "{app}\src"
+Type: filesandordirs; Name: "{app}\node_modules"
+Type: files; Name: "{app}\package.json"
+Type: files; Name: "{app}\scripts\write-config.ps1"
+
 [Files]
-; Source code
-Source: "..\src\*.js"; DestDir: "{app}\src"; Flags: ignoreversion
-
-; Native DLL
-Source: "..\src\win11\build\MagicodeNative.dll"; DestDir: "{app}\src\win11\build"; Flags: ignoreversion
-
-; Node modules
-Source: "..\node_modules\*"; DestDir: "{app}\node_modules"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; Package manifest
-Source: "..\package.json"; DestDir: "{app}"; Flags: ignoreversion
+; The uploader, and the context-menu handler that launches it (they must stay side by side)
+Source: "..\src\MagicodeUploader\bin\Release\net48\MagicodeUploader.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\src\win11\build\MagicodeNative.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Sparse MSIX package files
 Source: "..\AppxManifest.xml"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\MagicodeUploader.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion
 
 ; Install scripts
 Source: "register-win11.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
-Source: "write-config.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "uninstall.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 
 [Run]
-; Write magicode-config.json with correct paths after install
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\write-config.ps1"" -AppDir ""{app}"""; Flags: runhidden shellexec waituntilterminated
 ; Register the context menu: sparse package on Win11 (enables Developer Mode if needed), classic verb otherwise
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\register-win11.ps1"" -AppDir ""{app}"""; Flags: runhidden shellexec waituntilterminated
 
@@ -57,7 +52,6 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Fil
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\uninstall.ps1"" -Quiet -KeepFiles"; Flags: runhidden shellexec waituntilterminated
 
 [UninstallDelete]
-Type: files; Name: "{app}\src\win11\build\magicode-config.json"
 Type: files; Name: "{app}\upload.log"
 
 [Code]
@@ -75,12 +69,12 @@ end;
 
 function InitializeSetup(): Boolean;
 var
-  ResultCode: Integer;
+  Release: Cardinal;
 begin
-  // Check if Node.js is installed
-  if not Exec('cmd.exe', '/c where node', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+  // .NET Framework 4.8 ships with Windows 10 1903+ and Windows 11; older Windows 10 may need it installed.
+  if not RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full', 'Release', Release) or (Release < 528040) then
   begin
-    MsgBox('Node.js is required but was not found.' #13#10#13#10 'Please install Node.js from https://nodejs.org and try again.', mbError, MB_OK);
+    MsgBox('Magicode Uploader needs .NET Framework 4.8, which was not found.' #13#10#13#10 'Please install it from https://dotnet.microsoft.com/download/dotnet-framework/net48 and try again.', mbError, MB_OK);
     Result := False;
     Exit;
   end;

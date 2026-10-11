@@ -16,7 +16,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $clsid = '{7B3F2E41-1D5A-4F6E-9C8B-2A3D4E5F6071}'
-$dllPath = Join-Path $AppDir 'src\win11\build\MagicodeNative.dll'
+$dllPath = Join-Path $AppDir 'MagicodeNative.dll'
 $verbKeys = @(
     'HKCU:\Software\Classes\*\shell\MagicodeUpload',
     'HKCU:\Software\Classes\Directory\shell\MagicodeUpload'

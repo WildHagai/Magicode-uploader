@@ -2,10 +2,10 @@ node_modules/
 dist/
 .a5c/
 src/win11/build/
-src/win11/bin/
-src/win11/obj/
 MagicodeUploader.exe
 Assets/
 upload-debug.log
 *.log
 nul
+bin/
+obj/

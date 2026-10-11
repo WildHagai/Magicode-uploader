@@ -1,0 +1,95 @@
+name: Build
+
+# Every push builds and tests the installer and keeps it as a workflow artifact;
+# a v* tag also publishes it as a GitHub release.
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="$(node -p "require('./package.json').version")"; fi
+          echo "VERSION=$v" >> $GITHUB_OUTPUT
+
+      - name: Create assets
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "Assets")) { New-Item Assets -ItemType Directory }
+          Add-Type -AssemblyName System.Drawing
+          foreach ($size in @(44, 150)) {
+            $bmp = New-Object System.Drawing.Bitmap $size, $size
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.Clear([System.Drawing.Color]::FromArgb(0x33, 0x99, 0xFF))
+            $font = New-Object System.Drawing.Font("Arial", [Math]::Max(10, $size/4), [System.Drawing.FontStyle]::Bold)
+            $sf = New-Object System.Drawing.StringFormat
+            $sf.Alignment = [System.Drawing.StringAlignment]::Center
+            $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+            $rect = New-Object System.Drawing.RectangleF(0, 0, $size, $size)
+            $g.DrawString("M", $font, [System.Drawing.Brushes]::White, $rect, $sf)
+            $g.Dispose()
+            $name = if ($size -eq 44) { "Square44x44Logo.png" } else { "Square150x150Logo.png" }
+            $bmp.Save("Assets\$name", [System.Drawing.Imaging.ImageFormat]::Png)
+            $bmp.Dispose()
+          }
+          Copy-Item "Assets\Square44x44Logo.png" "Assets\logo.png"
+          & powershell -File scripts\create-icon.ps1
+
+      - name: Unit and end-to-end tests
+        run: npm test
+
+      - name: Stamp the version
+        shell: pwsh
+        run: |
+          $v = '${{ steps.version.outputs.VERSION }}'
+          $iss = Get-Content scripts\installer.iss -Raw
+          Set-Content scripts\installer.iss ($iss -replace '#define MyAppVersion "[^"]*"', "#define MyAppVersion `"$v`"")
+          $m = Get-Content AppxManifest.xml -Raw
+          Set-Content AppxManifest.xml ($m -replace '(<Identity[^>]*Version=")[^"]*', "`${1}$v.0")
+
+      - name: Build the uploader
+        run: dotnet build src/MagicodeUploader -c Release --nologo -p:Version=${{ steps.version.outputs.VERSION }}
+
+      - name: Build the context-menu DLL
+        shell: cmd
+        run: |
+          if not exist "src\win11\build" mkdir "src\win11\build"
+          cl.exe /nologo /O2 /W3 /EHsc /std:c++17 /LD src\win11\MagicodeContextMenu.cpp /Fo"src\win11\build\MagicodeNative.obj" /Fe"src\win11\build\MagicodeNative.dll" /link /DEF:src\win11\MagicodeContextMenu.def shlwapi.lib shell32.lib ole32.lib advapi32.lib
+          del /q src\win11\build\MagicodeNative.obj src\win11\build\MagicodeNative.exp src\win11\build\MagicodeNative.lib 2>nul
+
+      - name: Build the installer
+        shell: cmd
+        run: |
+          "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /O"dist" scripts\installer.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MagicodeUploader-Setup-${{ steps.version.outputs.VERSION }}
+          path: dist/MagicodeUploader-Setup.exe
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MagicodeUploader-Setup.exe
+          generate_release_notes: true

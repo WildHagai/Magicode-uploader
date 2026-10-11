@@ -19,15 +19,11 @@ if "%VCVARS%"=="" (
 
 call "%VCVARS%" x64
 
-:: Find Windows SDK
-set "SDK_VER="
-for /f "delims=" %%d in ('dir /b /ad /on "%ProgramFiles(x86)%\Windows Kits\10\Include\" 2^>nul') do set "SDK_VER=%%d"
-if "%SDK_VER%"=="" (
-    echo ERROR: Windows SDK not found
+:: vcvarsall puts the Windows SDK on INCLUDE and LIB when it is installed
+if "%WindowsSdkDir%"=="" (
+    echo ERROR: Windows SDK not found - install it with the Visual Studio Installer
     exit /b 1
 )
-set "SDK_INC=%ProgramFiles(x86)%\Windows Kits\10\Include\%SDK_VER%"
-set "SDK_LIB=%ProgramFiles(x86)%\Windows Kits\10\Lib\%SDK_VER%"
 
 set "SRC=%~dp0..\src\win11"
 set "OUT=%SRC%\build"
@@ -36,12 +32,10 @@ if not exist "%OUT%" mkdir "%OUT%"
 
 echo Building MagicodeNative.dll (x64)...
 cl.exe /nologo /O2 /W3 /EHsc /std:c++17 ^
-  /I"%SDK_INC%\um" /I"%SDK_INC%\shared" /I"%SDK_INC%\ucrt" ^
   /LD "%SRC%\MagicodeContextMenu.cpp" ^
   /Fo"%OUT%\MagicodeNative.obj" ^
   /Fe"%OUT%\MagicodeNative.dll" ^
   /link /DEF:"%SRC%\MagicodeContextMenu.def" ^
-  /LIBPATH:"%SDK_LIB%\um\x64" /LIBPATH:"%SDK_LIB%\ucrt\x64" ^
   shlwapi.lib shell32.lib ole32.lib advapi32.lib
 
 if %errorlevel% neq 0 (

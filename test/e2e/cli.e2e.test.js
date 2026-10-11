@@ -14,7 +14,7 @@ import { readClipboard, writeClipboard } from '../helpers/clipboard.js';
 import { EXE } from '../helpers/exe.js';
 
 const CHUNK_SIZE = 2 * 1024 * 1024;
-const CHUNK_ATTEMPTS = 5;
+const ATTEMPTS = 10; // Uploader.Attempts
 const SENTINEL = 'magicode-e2e-clipboard-sentinel';
 
 let server;
@@ -35,14 +35,17 @@ after(async () => {
 
 beforeEach(() => {
   server.state.failDataUploads = 0;
+  server.state.failStatus = 500;
   server.state.okFalse = false;
+  server.state.maxSize = Infinity;
   writeClipboard(SENTINEL);
 });
 
-/** Runs the CLI; resolves with exit code, output, notifications and log lines. */
+/** Runs the CLI; resolves with exit code, output, notifications, log and history lines. */
 function runCli(args, extraEnv = {}) {
   const notifyLog = path.join(dir, `notify-${crypto.randomUUID()}.log`);
   const appLog = path.join(dir, `app-${crypto.randomUUID()}.log`);
+  const history = extraEnv.MAGICODE_HISTORY_PATH ?? path.join(dir, `recent-${crypto.randomUUID()}.txt`);
   return new Promise((resolve) => {
     execFile(EXE, args, {
       env: {
@@ -54,6 +57,8 @@ function runCli(args, extraEnv = {}) {
         // "Uploading..." only after a minute, so even a slow (cold) CI machine
         // counts every upload as fast; the slow-upload test sets it to 0.
         MAGICODE_UPLOADING_DELAY_MS: '60000',
+        MAGICODE_HISTORY_PATH: history,
+        MAGICODE_LANG: 'en',
         ...extraEnv,
       },
       encoding: 'utf-8',
@@ -67,6 +72,7 @@ function runCli(args, extraEnv = {}) {
         stderr: stderr.trim(),
         notifications: lines(notifyLog),
         log: lines(appLog),
+        history: lines(history),
       });
     });
   });
@@ -127,7 +133,7 @@ test('large file: uploaded in chunks and reassembled byte-for-byte', async () =>
 test('a chunk that fails a few times is retried and the upload completes', async () => {
   const data = crypto.randomBytes(1000);
   const file = write('retry/flaky.bin', data);
-  server.state.failDataUploads = CHUNK_ATTEMPTS - 1;
+  server.state.failDataUploads = ATTEMPTS - 1;
 
   const r = await runCli([file]);
   assert.equal(r.code, 0, r.stderr);
@@ -184,7 +190,35 @@ test('server failure: exit 1, error notification, clipboard untouched', async ()
   assert.equal(r.stdout, '');
   assert.equal(readClipboard().trim(), SENTINEL);
   assert.equal(r.notifications.length, 1);
-  assert.match(r.notifications[0], /^Error Upload failed: data-upload at byte 0 failed/);
+  assert.equal(r.notifications[0],
+    'Error Upload failed: send.magicode.me is having trouble right now (HTTP 500). Please try again later.');
+  // The technical detail goes to the log.
+  assert.ok(r.log.some((l) => /data-upload at byte 0 failed \(HTTP 500\)/.test(l)), r.log.join('\n'));
+  // Server errors are retried ATTEMPTS times before giving up.
+  assert.equal(100 - server.state.failDataUploads, ATTEMPTS);
+});
+
+test('a refused request (HTTP 4xx) is not retried', async () => {
+  const file = write('refused/x.txt', 'x');
+  server.state.failDataUploads = 100;
+  server.state.failStatus = 403;
+
+  const r = await runCli([file]);
+  assert.equal(r.code, 1);
+  assert.equal(r.notifications.at(-1), 'Error Upload failed: send.magicode.me refused the upload (HTTP 403).');
+  assert.equal(100 - server.state.failDataUploads, 1);
+});
+
+test('a file over the size limit: clear message, no data sent', async () => {
+  const file = write('toolarge/big.bin', crypto.randomBytes(3 * 1024));
+  server.state.maxSize = 1024;
+  const dataUploads = () => server.state.requests.filter((q) => q.path === '/send-file/data-upload').length;
+  const before = dataUploads();
+
+  const r = await runCli([file]);
+  assert.equal(r.code, 1);
+  assert.equal(r.notifications.at(-1), 'Error Upload failed: big.bin is 3 KB; send.magicode.me accepts files up to 10 GB');
+  assert.equal(dataUploads(), before);
 });
 
 test('a server "ok: false" answer is a failure', async () => {
@@ -194,14 +228,54 @@ test('a server "ok: false" answer is a failure', async () => {
   const r = await runCli([file]);
   assert.equal(r.code, 1);
   assert.equal(readClipboard().trim(), SENTINEL);
-  assert.match(r.notifications.at(-1), /^Error Upload failed: data-upload at byte 0 failed \(HTTP 200\)/);
+  assert.equal(r.notifications.at(-1), 'Error Upload failed: send.magicode.me is having trouble right now. Please try again later.');
 });
 
 test('server unreachable: a readable error', async () => {
   const file = write('offline/x.txt', 'x');
   const r = await runCli([file], { MAGICODE_BASE_URL: 'http://127.0.0.1:9' });
   assert.equal(r.code, 1);
-  assert.match(r.notifications.at(-1), /^Error Upload failed: HTTPS request failed: /);
+  assert.equal(r.notifications.at(-1), "Error Upload failed: Couldn't reach send.magicode.me. Check your internet connection.");
+});
+
+test('Hebrew Windows: notifications in Hebrew', async () => {
+  const file = write('hebrew/דוח.txt', 'x');
+  const r = await runCli([file], { MAGICODE_LANG: 'he', MAGICODE_UPLOADING_DELAY_MS: '0' });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.notifications, ['Info מעלה את דוח.txt...', `Info ההעלאה הסתיימה! הקישור הועתק ללוח: ${r.stdout}`]);
+
+  const missing = await runCli([path.join(dir, 'אין.txt')], { MAGICODE_LANG: 'he' });
+  assert.match(missing.notifications.at(-1), /^Error ההעלאה נכשלה: הקובץ לא נמצא: /);
+});
+
+test('uploads are recorded in the recent-links history, newest first, at most 10', async () => {
+  const history = path.join(dir, `recent-${crypto.randomUUID()}.txt`);
+  const old = Array.from({ length: 10 }, (_, i) => `2026-01-0${i % 9 + 1}T00:00:00Z\told${i}.txt\thttps://example.test/${i}`);
+  fs.writeFileSync(history, old.join('\r\n') + '\r\n');
+  const file = write('history/new report.pdf', 'pdf');
+
+  const r = await runCli([file], { MAGICODE_HISTORY_PATH: history });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.history.length, 10);
+  const [time, name, url] = r.history[0].split('\t');
+  assert.match(time, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+  assert.equal(name, 'new report.pdf');
+  assert.equal(url, r.stdout);
+  assert.equal(r.history[1], old[0]);
+  assert.ok(!r.history.includes(old[9]), 'the oldest entry should be dropped');
+});
+
+test('--copy (from the recent-links menu): copies the link again and says so', async () => {
+  const url = 'https://send.magicode.me/send-file/file/0123abcd/view';
+  const r = await runCli(['--copy', url]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readClipboard().trim(), url);
+  assert.deepEqual(r.notifications, [`Info Link copied to clipboard: ${url}`]);
+  assert.deepEqual(r.history, [], '--copy should not add to the history');
+
+  const bad = await runCli(['--copy', 'not a link']);
+  assert.equal(bad.code, 1);
+  assert.equal(readClipboard().trim(), url);
 });
 
 test('missing file: exit 1 with an error notification', async () => {

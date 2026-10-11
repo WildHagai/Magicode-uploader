@@ -26,7 +26,8 @@ function multipartFile(body, contentType) {
 
 export async function startMockServer() {
   const uploads = new Map(); // keyFile -> { filename, size, data: Buffer[], received, chunks, keyUpload }
-  const state = { failDataUploads: 0, okFalse: false, requests: [] };
+  // failDataUploads: answer that many data-uploads with failStatus; maxSize: the server's size limit.
+  const state = { failDataUploads: 0, failStatus: 500, okFalse: false, maxSize: Infinity, requests: [] };
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -44,6 +45,8 @@ export async function startMockServer() {
         res.writeHead(404, { 'Content-Type': 'text/html' });
         return res.end('<pre>Cannot POST /send-file/prep-upload</pre>');
       }
+      // The real server accepts up to 10 GiB and answers bigger files like this.
+      if (size > state.maxSize) return json(200, { error: 'limit-size' });
       const keyFile = crypto.randomBytes(20).toString('hex');
       const keyUpload = crypto.randomBytes(8).toString('hex');
       uploads.set(keyFile, { filename, size, keyUpload, data: [], received: 0, chunks: [] });
@@ -53,7 +56,7 @@ export async function startMockServer() {
     if (req.method === 'POST' && url.pathname === '/send-file/data-upload') {
       if (state.failDataUploads > 0) {
         state.failDataUploads--;
-        return json(500, { ok: false, error: 'injected failure' });
+        return json(state.failStatus, { ok: false, error: 'injected failure' });
       }
       if (state.okFalse) return json(200, { ok: false });
       const u = uploads.get(url.searchParams.get('keyFile'));

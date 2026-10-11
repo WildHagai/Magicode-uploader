@@ -11,7 +11,7 @@ namespace MagicodeUploader
 {
     /// <summary>
     /// Uploads a file with send.magicode.me's chunked protocol:
-    ///   POST /send-file/prep-upload {filename, size}  -> {keyUpload, keyFile}
+    ///   POST /send-file/prep-upload {filename, size}  -> {keyUpload, keyFile} (or {error: "limit-size"})
     ///   POST /send-file/data-upload?position&amp;length&amp;keyUpload&amp;keyFile (multipart) -> {ok, end}
     /// The file is then at /send-file/file/&lt;keyFile&gt;/view.
     /// </summary>
@@ -19,17 +19,25 @@ namespace MagicodeUploader
     {
         // Same chunk size the send.magicode.me web client uses.
         public const int ChunkSize = 2 * 1024 * 1024;
-        public const int ChunkAttempts = 5;
+        // send.magicode.me rejects anything larger (measured: 10 GiB is accepted, one byte more is not).
+        public const long MaxFileSize = 10L * 1024 * 1024 * 1024;
+        // Transient failures (no network, timeouts, server errors) are retried with backoff
+        // 1, 2, 4, 8, 16, 30, 30... seconds: about 3 minutes in all, enough to ride out a
+        // Wi-Fi drop or a router restart. The upload resumes at the chunk that failed.
+        public const int Attempts = 10;
+        private const int MaxBackoffSteps = 30;
 
         private readonly Uri _baseUrl;
         private readonly int _retryDelayMs;
+        private readonly long _maxFileSize;
         private readonly HttpClient _http;
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer();
 
-        public Uploader(Uri baseUrl, int retryDelayMs = 1000)
+        public Uploader(Uri baseUrl, int retryDelayMs = 1000, long maxFileSize = MaxFileSize)
         {
             _baseUrl = baseUrl;
             _retryDelayMs = retryDelayMs;
+            _maxFileSize = maxFileSize;
             _http = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
             // .NET Framework sends "Expect: 100-continue" by default, which costs a round trip per chunk.
             _http.DefaultRequestHeaders.ExpectContinue = false;
@@ -37,21 +45,32 @@ namespace MagicodeUploader
 
         public void Dispose() => _http.Dispose();
 
-        /// <summary>Uploads the file and returns its view URL. Throws with a readable message on failure.</summary>
+        /// <summary>Uploads the file and returns its view URL. Throws <see cref="UploadException"/> on failure.</summary>
         public async Task<string> UploadAsync(string filePath, Action<long, long> onProgress = null)
         {
             string path = Path.GetFullPath(filePath);
-            if (Directory.Exists(path)) throw new UploadException($"Path is not a file: {path}");
-            if (!File.Exists(path)) throw new UploadException($"File not found: {path}");
+            string name = Path.GetFileName(path);
+            if (Directory.Exists(path)) throw new UploadException(Text.NotAFile(path));
+            if (!File.Exists(path)) throw new UploadException(Text.NotFound(path));
 
-            using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            FileStream file;
+            try
+            {
+                file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                throw new UploadException(Text.CannotRead(path, e.Message));
+            }
+
+            using (file)
             {
                 long size = file.Length;
-                if (size == 0)
-                    throw new UploadException($"{Path.GetFileName(path)} is empty (send.magicode.me rejects empty files)");
+                if (size == 0) throw new UploadException(Text.Empty(name));
+                if (size > _maxFileSize) throw new UploadException(Text.TooLarge(name, size));
 
-                var (keyUpload, keyFile) = await PrepUploadAsync(Path.GetFileName(path), size).ConfigureAwait(false);
-                await DataUploadAsync(file, size, keyUpload, keyFile, onProgress).ConfigureAwait(false);
+                var (keyUpload, keyFile) = await WithRetries(() => PrepUploadAsync(name, size)).ConfigureAwait(false);
+                await DataUploadAsync(file, name, size, keyUpload, keyFile, onProgress).ConfigureAwait(false);
                 return new Uri(_baseUrl, $"/send-file/file/{keyFile}/view").AbsoluteUri;
             }
         }
@@ -61,18 +80,20 @@ namespace MagicodeUploader
             string payload = _json.Serialize(new Dictionary<string, object> { ["filename"] = filename, ["size"] = size });
             var content = new StringContent(payload, new UTF8Encoding(false), "application/json");
 
-            var (status, data) = await PostJsonAsync("/send-file/prep-upload", content).ConfigureAwait(false);
-            if (status < 200 || status >= 300)
-                throw new UploadException($"prep-upload failed with HTTP {status}: {_json.Serialize(data)}");
+            var data = await PostJsonAsync("/send-file/prep-upload", content, "prep-upload").ConfigureAwait(false);
+            if (data.TryGetValue("error", out var error))
+            {
+                if (error as string == "limit-size") throw new UploadException(Text.TooLarge(filename, size));
+                throw new UploadException(Text.Unexpected, $"prep-upload returned an error: {_json.Serialize(data)}");
+            }
             if (!(data.TryGetValue("keyUpload", out var ku) && ku is string keyUpload && keyUpload.Length > 0 &&
                   data.TryGetValue("keyFile", out var kf) && kf is string keyFile && keyFile.Length > 0))
-                throw new UploadException($"prep-upload returned unexpected payload: {_json.Serialize(data)}");
+                throw new UploadException(Text.Unexpected, $"prep-upload returned an unexpected payload: {_json.Serialize(data)}");
             return (keyUpload, keyFile);
         }
 
-        // Sends the file one chunk at a time (only one chunk is held in memory),
-        // retrying each chunk a few times before giving up.
-        private async Task DataUploadAsync(FileStream file, long size, string keyUpload, string keyFile, Action<long, long> onProgress)
+        // Sends the file one chunk at a time (only one chunk is held in memory).
+        private async Task DataUploadAsync(FileStream file, string name, long size, string keyUpload, string keyFile, Action<long, long> onProgress)
         {
             var buffer = new byte[ChunkSize];
             long position = 0;
@@ -84,30 +105,19 @@ namespace MagicodeUploader
                 while (read < length)
                 {
                     int n = await file.ReadAsync(buffer, read, length - read).ConfigureAwait(false);
-                    if (n == 0) throw new UploadException($"file changed while uploading (read {read} of {length} bytes at {position})");
+                    if (n == 0) throw new UploadException(Text.FileChanged(name), $"read {read} of {length} bytes at {position}");
                     read += n;
                 }
 
-                bool end;
-                for (int attempt = 1; ; attempt++)
-                {
-                    try
-                    {
-                        end = await SendChunkAsync(buffer, length, position, keyUpload, keyFile).ConfigureAwait(false);
-                        break;
-                    }
-                    catch (Exception) when (attempt < ChunkAttempts)
-                    {
-                        await Task.Delay(_retryDelayMs * attempt).ConfigureAwait(false);
-                    }
-                }
+                long at = position;
+                bool end = await WithRetries(() => SendChunkAsync(buffer, length, at, keyUpload, keyFile)).ConfigureAwait(false);
 
                 position += length;
                 onProgress?.Invoke(position, size);
                 if (end) return;
             } while (position < size);
 
-            throw new UploadException("server never acknowledged the end of the upload");
+            throw new UploadException(Text.Unexpected, "the server never acknowledged the end of the upload");
         }
 
         /// <summary>Sends one chunk as multipart/form-data; returns the server's "end" flag.</summary>
@@ -126,14 +136,19 @@ namespace MagicodeUploader
 
             string query = $"/send-file/data-upload?position={position}&length={length}" +
                 $"&keyUpload={Uri.EscapeDataString(keyUpload)}&keyFile={Uri.EscapeDataString(keyFile)}";
-            var (status, data) = await PostJsonAsync(query, content).ConfigureAwait(false);
+            string step = $"data-upload at byte {position}";
+            var data = await PostJsonAsync(query, content, step).ConfigureAwait(false);
 
-            if (status < 200 || status >= 300 || !(data.TryGetValue("ok", out var ok) && ok is bool okFlag && okFlag))
-                throw new UploadException($"data-upload at byte {position} failed (HTTP {status}): {_json.Serialize(data)}");
+            if (!(data.TryGetValue("ok", out var ok) && ok is bool okFlag && okFlag))
+                throw new UploadException(Text.ServerTrouble(null), $"{step} failed: {_json.Serialize(data)}", transient: true);
             return data.TryGetValue("end", out var end) && end is bool endFlag && endFlag;
         }
 
-        private async Task<(int status, Dictionary<string, object> data)> PostJsonAsync(string pathAndQuery, HttpContent content)
+        /// <summary>
+        /// POSTs and parses the JSON answer. Network failures, timeouts, 5xx/429 and
+        /// non-JSON answers are transient; other HTTP errors are not.
+        /// </summary>
+        private async Task<Dictionary<string, object>> PostJsonAsync(string pathAndQuery, HttpContent content, string step)
         {
             HttpResponseMessage res;
             try
@@ -142,26 +157,43 @@ namespace MagicodeUploader
             }
             catch (TaskCanceledException)
             {
-                throw new UploadException($"request timed out after {_http.Timeout.TotalSeconds:0} seconds");
+                throw new UploadException(Text.TimedOut, $"{step} timed out after {_http.Timeout.TotalSeconds:0} seconds", transient: true);
             }
             catch (HttpRequestException e)
             {
-                throw new UploadException($"HTTPS request failed: {Innermost(e).Message}");
+                throw new UploadException(Text.NoConnection, $"{step} failed: {Innermost(e).Message}", transient: true);
             }
 
             using (res)
             {
                 int status = (int)res.StatusCode;
                 string raw = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+                string detail = $"{step} failed (HTTP {status}): {(raw.Length > 200 ? raw.Substring(0, 200) : raw)}";
+                if (status >= 500 || status == 429) throw new UploadException(Text.ServerTrouble(status), detail, transient: true);
+                if (status < 200 || status >= 300) throw new UploadException(Text.Refused(status), detail);
                 try
                 {
                     var data = _json.Deserialize<Dictionary<string, object>>(raw);
-                    if (data == null) throw new ArgumentException("not a JSON object");
-                    return (status, data);
+                    if (data != null) return data;
                 }
-                catch (Exception)
+                catch (Exception) { }
+                // e.g. a captive portal or proxy page instead of the API's answer
+                throw new UploadException(Text.Unexpected, detail, transient: true);
+            }
+        }
+
+        private async Task<T> WithRetries<T>(Func<Task<T>> action)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
                 {
-                    throw new UploadException($"invalid JSON response (HTTP {status}): {(raw.Length > 200 ? raw.Substring(0, 200) : raw)}");
+                    return await action().ConfigureAwait(false);
+                }
+                catch (UploadException e) when (e.Transient && attempt < Attempts)
+                {
+                    int steps = Math.Min(1 << Math.Min(attempt - 1, 10), MaxBackoffSteps);
+                    await Task.Delay(_retryDelayMs * steps).ConfigureAwait(false);
                 }
             }
         }
@@ -179,8 +211,16 @@ namespace MagicodeUploader
         }
     }
 
+    /// <summary>A failure with a message for the user and, optionally, technical detail for the log.</summary>
     internal sealed class UploadException : Exception
     {
-        public UploadException(string message) : base(message) { }
+        public string Detail { get; }
+        public bool Transient { get; }
+
+        public UploadException(string message, string detail = null, bool transient = false) : base(message)
+        {
+            Detail = detail;
+            Transient = transient;
+        }
     }
 }

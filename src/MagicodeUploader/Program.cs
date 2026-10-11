@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -26,12 +27,14 @@ namespace MagicodeUploader
                 int exitCode;
                 try
                 {
-                    exitCode = Run(argv, notifier);
+                    exitCode = argv.Length == 2 && argv[0] == "--copy"
+                        ? CopyAgain(argv[1], notifier)
+                        : Upload(argv, notifier);
                 }
                 catch (Exception e)
                 {
                     Console.Error.WriteLine($"Error: {e.Message}");
-                    Log($"error: {e}");
+                    Log($"error: {e}" + (e is UploadException u && u.Detail != null ? $"\n  detail: {u.Detail}" : ""));
                     notifier.ShowError(e.Message);
                     exitCode = 1;
                 }
@@ -40,26 +43,26 @@ namespace MagicodeUploader
             }
         }
 
-        private static int Run(string[] argv, Notifier notifier)
+        private static int Upload(string[] argv, Notifier notifier)
         {
             List<string> paths = Args.Read(argv).Select(Path.GetFullPath).ToList();
             if (paths.Count == 0)
             {
-                Console.Error.WriteLine("Usage: MagicodeUploader <file-or-folder> [more...]");
+                Console.Error.WriteLine(Text.Usage);
                 return 1;
             }
             foreach (string p in paths)
             {
-                if (!File.Exists(p) && !Directory.Exists(p)) throw new UploadException($"File not found: {p}");
+                if (!File.Exists(p) && !Directory.Exists(p)) throw new UploadException(Text.NotFound(p));
             }
 
             bool needsZip = paths.Count > 1 || Directory.Exists(paths[0]);
             string zipName = Args.ZipNameFor(paths);
-            string label = needsZip
-                ? $"{zipName} (compressing {paths.Count} item{(paths.Count > 1 ? "s" : "")})"
-                : Path.GetFileName(paths[0]);
+            string label = needsZip ? Text.Compressing(zipName, paths.Count) : Path.GetFileName(paths[0]);
 
             string tempZip = null;
+            // Don't let the PC go to sleep in the middle of a long upload.
+            SetThreadExecutionState(EsContinuous | EsSystemRequired);
             try
             {
                 Task<string> work = Task.Run(async () =>
@@ -80,16 +83,33 @@ namespace MagicodeUploader
                 bool copied = CopyToClipboard(link);
                 Console.WriteLine(link);
                 Log($"uploaded {tempZip ?? paths[0]} -> {link}");
-                notifier.ShowSuccess(link, copied);
+                try { History.Add(needsZip ? zipName : Path.GetFileName(paths[0]), link); }
+                catch (Exception e) { Log($"history failed: {e.Message}"); }
+                notifier.ShowUploaded(link, copied);
                 return 0;
             }
             finally
             {
+                SetThreadExecutionState(EsContinuous);
                 if (tempZip != null)
                 {
                     try { Directory.Delete(Path.GetDirectoryName(tempZip), true); } catch { }
                 }
             }
+        }
+
+        /// <summary>"--copy &lt;link&gt;": from the recent-links menu; copies an earlier link again.</summary>
+        private static int CopyAgain(string link, Notifier notifier)
+        {
+            if (!Uri.TryCreate(link, UriKind.Absolute, out Uri uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+            {
+                Console.Error.WriteLine(Text.Usage);
+                return 1;
+            }
+            bool copied = CopyToClipboard(uri.AbsoluteUri);
+            Console.WriteLine(uri.AbsoluteUri);
+            notifier.ShowCopied(uri.AbsoluteUri, copied);
+            return copied ? 0 : 1;
         }
 
         private static bool CopyToClipboard(string text)
@@ -135,5 +155,11 @@ namespace MagicodeUploader
 
         private static int EnvInt(string name, int fallback) =>
             int.TryParse(Env(name), out int v) && v >= 0 ? v : fallback;
+
+        private const uint EsContinuous = 0x80000000;
+        private const uint EsSystemRequired = 0x00000001;
+
+        [DllImport("kernel32.dll")]
+        private static extern uint SetThreadExecutionState(uint flags);
     }
 }

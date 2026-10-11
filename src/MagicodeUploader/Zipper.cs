@@ -76,7 +76,7 @@ namespace MagicodeUploader
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
             {
-                throw new IOException($"Could not read {file}: {e.Message}", e);
+                throw new IOException(Text.CannotRead(file, e.Message), e);
             }
         }
 

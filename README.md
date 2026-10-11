@@ -136,6 +136,10 @@ git push origin v1.3.0
 
 The action runs the tests, builds the uploader and the DLL, creates the installer with Inno Setup, and publishes `MagicodeUploader-Setup.exe` to GitHub Releases.
 
+## License
+
+[MIT](LICENSE)
+
 ---
 
 <div dir="rtl" align="right">

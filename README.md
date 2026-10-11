@@ -33,9 +33,9 @@ The installer sets up the context menu and registers all necessary components.
 
 #### Why does the installer ask for administrator permission?
 
-To appear in the **Windows 11 top-level menu**, a context-menu command has to be part of an app package. Windows only accepts an unsigned app package like this one when **Developer Mode** is turned on, so the installer turns it on (that is the UAC prompt). Developer Mode is a standard Windows setting (*Settings > System > For developers*) — it lets you install apps that aren't from the Microsoft Store.
+To appear in the **Windows 11 top-level menu**, a context-menu command has to be part of an app package. Windows only accepts an unsigned app package like this one when **Developer Mode** is turned on, so the installer offers to turn it on (that is the UAC prompt). Developer Mode is a standard Windows setting (*Settings > System > For developers*) — it lets you install apps that aren't from the Microsoft Store.
 
-If you decline the prompt, everything still works: "Upload to Magicode" just appears under **Show more options** instead of the top-level menu.
+If you untick that option or decline the prompt, everything still works: "Upload to Magicode" just appears under **Show more options** instead of the top-level menu.
 
 ### Requirements
 
@@ -64,6 +64,21 @@ You can also use it from the command line:
 ```
 
 It prints the link, copies it to the clipboard and shows the notification.
+
+## Privacy
+
+Magicode Uploader sends a file to [send.magicode.me](https://send.magicode.me) only when you ask it to, by choosing "Upload to Magicode" or running it on that file. It does not transfer any other information to other networked systems: no telemetry, no analytics, no update checks. Links to your uploads are kept only in `upload.log` in the install folder, on your computer.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
+
+*Signing is being set up: releases up to and including 1.3.0 are not signed yet.*
+
+- Committers and reviewers: [members of this repository](../../graphs/contributors)
+- Approvers: [owners](https://github.com/WildHagai)
+
+Releases are built from this repository by [GitHub Actions](.github/workflows/build.yml), and each release is approved by hand before it is signed.
 
 ## Building from Source
 
@@ -154,9 +169,9 @@ The action runs the tests, builds the uploader and the DLL, creates the installe
 
 #### למה ההתקנה מבקשת הרשאת מנהל?
 
-כדי שהפקודה תופיע **בתפריט הראשי של Windows 11**, היא צריכה להיות חלק מחבילת אפליקציה. Windows מקבל חבילה לא חתומה כמו זו רק כש**מצב מפתח** (Developer Mode) מופעל, ולכן ההתקנה מפעילה אותו (זו בקשת ה-UAC). מצב מפתח הוא הגדרה רגילה של Windows (*הגדרות > מערכת > למפתחים*) שמאפשרת להתקין אפליקציות שלא מה-Microsoft Store.
+כדי שהפקודה תופיע **בתפריט הראשי של Windows 11**, היא צריכה להיות חלק מחבילת אפליקציה. Windows מקבל חבילה לא חתומה כמו זו רק כש**מצב מפתח** (Developer Mode) מופעל, ולכן ההתקנה מציעה להפעיל אותו (זו בקשת ה-UAC). מצב מפתח הוא הגדרה רגילה של Windows (*הגדרות > מערכת > למפתחים*) שמאפשרת להתקין אפליקציות שלא מה-Microsoft Store.
 
-אם תסרבו לבקשה, הכול עדיין עובד: "Upload to Magicode" פשוט יופיע תחת **הצג אפשרויות נוספות** במקום בתפריט הראשי.
+אם תבטלו את הסימון של האפשרות הזו או תסרבו לבקשה, הכול עדיין עובד: "Upload to Magicode" פשוט יופיע תחת **הצג אפשרויות נוספות** במקום בתפריט הראשי.
 
 #### דרישות
 
@@ -167,6 +182,10 @@ The action runs the tests, builds the uploader and the DLL, creates the installe
 ### הסרה
 
 היכנסו ל**הגדרות > אפליקציות > אפליקציות מותקנות**, מצאו את "Magicode Uploader" ולחצו על הסר התקנה.
+
+### פרטיות
+
+Magicode Uploader שולח קובץ ל-send.magicode.me רק כשאתם מבקשים זאת, בבחירה ב-"Upload to Magicode". הוא לא שולח שום מידע אחר: אין טלמטריה, אין אנליטיקס ואין בדיקת עדכונים.
 
 ### שימוש
 

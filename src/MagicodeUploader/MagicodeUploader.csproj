@@ -10,6 +10,8 @@
     <AssemblyName>MagicodeUploader</AssemblyName>
     <RootNamespace>MagicodeUploader</RootNamespace>
     <Version>1.3.0</Version>
+    <!-- Product version is just the version, without "+<commit>", so it is the same in every build of a release. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>Magicode Uploader</Product>
     <Company>Magicode Uploader contributors</Company>
     <Copyright>Magicode Uploader contributors</Copyright>

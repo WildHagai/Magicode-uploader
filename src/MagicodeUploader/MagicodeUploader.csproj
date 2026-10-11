@@ -14,6 +14,9 @@
     <Description>Upload files to send.magicode.me from the Explorer context menu</Description>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
+    <!-- Always bin\Release\net48, even with Platform=x64 set by a C++ build environment;
+         the installer and the tests expect it there. -->
+    <AppendPlatformToOutputPath>false</AppendPlatformToOutputPath>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <ApplicationIcon Condition="Exists('..\..\Assets\app.ico')">..\..\Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
